@@ -25,7 +25,7 @@ const SOLUTIONS = {
   hw1: ['mkdir ~/course/homework1', 'cp ~/course/data/rates.csv ~/course/homework1/', ['cd ~/course/homework1', 'grep korona rates.csv > kronas.csv'], 'grep dolar rates.csv > dollars.csv',
     ['grep -c korona rates.csv >> answers.txt', 'grep -c dolar rates.csv >> answers.txt', 'grep EUR rates.csv | cut -d, -f2 >> answers.txt'],
     'sort -t, -k2 -n rates.csv | head -5 > cheapest5.csv', 'ls -l ~/course/homework1', 'cut -d, -f1 rates.csv | sort | uniq'],
-  vars: [['cd ~/course/data', 'ls'], 'name="Ada"', 'echo "Hello, $name"', 'name = "Ada"', "echo 'Hello, $name'", ['rows=$(wc -l < rates.csv)', 'echo "We have $rows currencies"'],
+  vars: [['mkdir -p ~/course/data ~/course/results', 'cd ~/course/data', String.raw`curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r '.[0].rates[] | "\(.code),\(.mid),\(.currency)"' > rates.csv`], 'name="Ada"', 'echo "Hello, $name"', 'name = "Ada"', "echo 'Hello, $name'", ['rows=$(wc -l < rates.csv)', 'echo "We have $rows currencies"'],
     ['euro=$(grep EUR rates.csv | cut -d, -f2)', 'echo "1 EUR = $euro PLN"'], 'date +%F', ['cp rates.csv rates_$(date +%F).csv', 'ls'],
     ['usd=$(grep USD rates.csv | cut -d, -f2)', 'echo "1 USD = $usd PLN"'], 'grep XYZ rates.csv', 'echo $?'],
   script: [['mkdir ~/course/scripts', 'cd ~/course/scripts'],
@@ -58,10 +58,10 @@ fi
     './summary.sh korona', './summary.sh', 'for w in dolar korona frank; do ./summary.sh $w; done > all.txt', 'ls -l ~/course/homework2'],
 };
 
-const sh = new Shell();
-
-(async () => {
-  for (const L of LESSONS) {
+let sh;
+async function play(lessons) {
+  sh = new Shell();
+  for (const L of lessons) {
     const sol = SOLUTIONS[L.id];
     assert.strictEqual(sol.length, L.steps.length, `${L.id}: ${sol.length} solutions for ${L.steps.length} steps`);
     for (let i = 0; i < sol.length; i++) {
@@ -71,6 +71,12 @@ const sh = new Shell();
     }
     console.log(`ok  ${L.title}`);
   }
+}
+
+(async () => {
+  // Class 2 must work on its own, for students who skip class 1
+  await play(LESSONS.filter(L => L.title.startsWith('2.')));
+  await play(LESSONS);
   // A few shell behaviours students rely on
   const r = async l => (await sh.run(l)).screen.map(c => c.text).join('');
   assert.strictEqual((await sh.run('echo "unclosed')).open, true);

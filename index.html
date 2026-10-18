@@ -41,6 +41,11 @@
   li.step pre { font: 12.5px/1.45 ui-monospace, Menlo, Consolas, monospace; background: var(--term-bg); color: var(--term-text); padding: 8px 10px; border-radius: 6px; overflow-x: auto; cursor: copy; margin: 6px 0 2px; position: relative; }
   li.step pre:hover::after { content: "click to copy"; position: absolute; top: 4px; right: 8px; font-size: 11px; color: var(--muted); }
   li.step pre.copied::after { content: "copied ✓"; }
+  li.step.has-q { padding-right: 32px; }
+  .q { position: absolute; top: 7px; right: 6px; width: 20px; height: 20px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 600; color: var(--accent); }
+  .why { margin-top: 6px; padding: 6px 8px; border-left: 2px solid var(--accent); font-size: 13px; }
+  .why div { margin: 2px 0; } .why p { margin: 4px 0 0; color: var(--muted); }
+  .why code { cursor: default; }
   .hint { font-size: 13px; color: var(--muted); }
   .hint button { font-size: 12px; padding: 1px 6px; }
   .done-box { margin-top: 12px; padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 15%, transparent); }
@@ -115,7 +120,7 @@ function renderLesson(flashIdx) {
   const L = LESSONS[active], done = progress[L.id] || 0;
   $('lesson').innerHTML = LESSONS.map((l, i) => `<option value="${i}" ${i === active ? 'selected' : ''}>${l.title} (${Math.min(progress[l.id] || 0, l.steps.length)}/${l.steps.length})</option>`).join('');
   $('intro').innerHTML = L.intro;
-  $('steps').innerHTML = L.steps.map((s, i) => `<li class="step ${i < done ? 'done' : i === done ? 'cur' : ''} ${i === flashIdx ? 'flash' : ''}">${s.do}${s.hint && i === done ? ` <span class="hint"><button data-hint="${esc(s.hint)}">hint</button></span>` : ''}</li>`).join('');
+  $('steps').innerHTML = L.steps.map((s, i) => `<li class="step ${i < done ? 'done' : i === done ? 'cur' : ''} ${i === flashIdx ? 'flash' : ''} ${s.why ? 'has-q' : ''}">${s.do}${s.why ? `<button class="q" title="What does this command do?">?</button><div class="why" hidden>${s.why}</div>` : ''}${s.hint && i === done ? ` <span class="hint"><button data-hint="${esc(s.hint)}">hint</button></span>` : ''}</li>`).join('');
   const next = LESSONS[active + 1];
   $('donebox').innerHTML = done >= L.steps.length ? `<div class="done-box">Lesson complete! ${next ? `<button id="next">Next: ${next.title} →</button>` : 'That is everything for now.'}</div>` : '';
   if (next && done >= L.steps.length) $('next').onclick = () => { active++; save(); renderLesson(); };
@@ -238,6 +243,8 @@ $('nano-text').addEventListener('keydown', e => {
 $('lesson').onchange = e => { active = +e.target.value; save(); renderLesson(); };
 $('steps').addEventListener('click', e => {
   if (e.target.dataset.hint) { e.target.parentElement.textContent = '💡 ' + e.target.dataset.hint; return; }
+  if (e.target.classList.contains('q')) { const w = e.target.nextElementSibling; w.hidden = !w.hidden; return; }
+  if (e.target.closest('.why')) return;
   const pre = e.target.closest('pre');
   if (pre) { navigator.clipboard?.writeText(pre.textContent).then(() => { pre.classList.add('copied'); setTimeout(() => pre.classList.remove('copied'), 1500); }); return; }
   if (e.target.tagName === 'CODE') { cmd.value = e.target.textContent; cmd.focus(); }
