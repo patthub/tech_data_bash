@@ -7,7 +7,7 @@ const is = re => c => re.test(c.cmd);
 
 const LESSONS = [
   {
-    id: 'start', title: '1. First commands',
+    id: 'start', title: '1.1 First commands',
     intro: 'The line ending in <b>$</b> is the <b>prompt</b>. Type after it and press <b>Enter</b>. Shortcuts that save hours: <b>↑</b> brings back the previous command, <b>Tab</b> completes names, <b>Ctrl+C</b> cancels.',
     steps: [
       { do: 'Say hello: <code>echo "Hello!"</code>', check: is(/^echo\b/) },
@@ -19,7 +19,7 @@ const LESSONS = [
     ],
   },
   {
-    id: 'move', title: '2. Where am I? Moving around',
+    id: 'move', title: '1.2 Where am I? Moving around',
     intro: 'A path is an address. <code>..</code> is the folder above, <code>~</code> is home, a path starting with <code>/</code> counts from the very top. Watch the <b>Explorer</b> panel: the folder you are in is highlighted.',
     steps: [
       { do: 'Create some folders to walk around in (you will understand this line in 20 minutes):<br><code>mkdir -p course/data course/notes course/results</code>', check: c => ['data', 'notes', 'results'].every(d => c.isDir('~/course/' + d)) },
@@ -40,7 +40,7 @@ const LESSONS = [
     ],
   },
   {
-    id: 'files', title: '3. Creating and organising files',
+    id: 'files', title: '1.3 Creating and organising files',
     intro: '<b>&gt;</b> writes to a file and <b>overwrites</b> it. <b>&gt;&gt;</b> appends at the end. <b>rm</b> has no recycle bin. Use <code>_</code> instead of spaces in file names.',
     steps: [
       { do: '<code>cd ~/course/notes</code>', check: c => c.cwd === '~/course/notes' },
@@ -62,7 +62,7 @@ const LESSONS = [
     ],
   },
   {
-    id: 'data', title: '4. First real data',
+    id: 'data', title: '1.4 First real data',
     intro: 'Exchange rates from the Polish National Bank (NBP). Names are in Polish: <i>dolar</i> = dollar, <i>korona</i> = krona/koruna, <i>frank</i> = franc, <i>funt</i> = pound. We will take the download command apart in a few weeks; today we just use it.',
     steps: [
       { do: 'Go to the data folder and download today\'s rates (click each line, then Enter):<br><code>cd ~/course/data</code><br><code>curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r \'.[0].rates[] | "\\(.code),\\(.mid),\\(.currency)"\' > rates.csv</code>', check: c => n(c.file(R)) > 10 },
@@ -79,7 +79,7 @@ const LESSONS = [
     ],
   },
   {
-    id: 'pipes', title: '5. Combining commands: pipes',
+    id: 'pipes', title: '1.5 Combining commands: pipes',
     intro: 'The <b>|</b> symbol is a conveyor belt: the output of one command goes straight into the next. Build pipelines step by step: run the first part, look at the output, only then add <b>|</b> and the next command.',
     steps: [
       { do: 'Make sure you are in the data folder: <code>cd ~/course/data</code>', check: c => c.cwd === D },
@@ -102,7 +102,7 @@ const LESSONS = [
     ],
   },
   {
-    id: 'hw1', title: 'Homework 1 (practice run)',
+    id: 'hw1', title: '1.H Homework 1 (practice run)',
     intro: 'Practise here, then do it for real in Cloud Shell and send a screenshot of <code>ls -l ~/course/homework1</code>.',
     steps: [
       { do: 'In ~/course create a folder called <b>homework1</b>.', check: c => c.isDir('~/course/homework1') },
@@ -116,5 +116,141 @@ const LESSONS = [
     ],
   },
 ];
+
+// ---------- Class 2: scripts ----------
+// pre`...` shows a block of code students copy into nano (String.raw keeps backslashes as typed).
+const pre = (s, ...v) => '<pre>' + String.raw(s, ...v).trim().replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</pre>';
+const S = '~/course/scripts';
+const today = c => c.run('date +%F').then(s => s.trim());
+const GET = String.raw`curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r '.[0].rates[] | "\(.code),\(.mid),\(.currency)"'`;
+
+LESSONS.push(
+  {
+    id: 'vars', title: '2.1 Variables',
+    intro: 'A variable is a name for a value: <code>name="Ada"</code> stores it, <code>$name</code> reads it. <b>No spaces around =</b>. <code>$(command)</code> runs a command and puts its output in place.',
+    steps: [
+      { do: 'Go to the data folder and check the file from last class is there: <code>cd ~/course/data</code>, then <code>ls</code>.<br>No rates.csv? Download it again:<br><code>' + GET + ' > rates.csv</code>', check: c => c.cwd === D && n(c.file(R)) > 10 },
+      { do: 'Store your name in a variable (use your own): <code>name="Ada"</code>. Nothing is printed; that is fine.', check: c => !!c.var('name') },
+      { do: 'Read it back: <code>echo "Hello, $name"</code>', check: c => c.out.startsWith('Hello, ') && c.out.includes(c.var('name')) },
+      { do: 'The classic mistake, spaces around =: <code>name = "Ada"</code>. Bash thinks <i>name</i> is a command.', check: c => /^name =/.test(c.cmd) },
+      { do: 'Single quotes switch variables off: <code>echo \'Hello, $name\'</code>. Double quotes keep them on.', check: c => c.out === 'Hello, $name\n' },
+      { do: 'Store the output of a command: <code>rows=$(wc -l < rates.csv)</code>, then <code>echo "We have $rows currencies"</code>', check: async c => c.var('rows') === (await c.run(`wc -l < ${R}`)).trim() && c.out.startsWith('We have') },
+      { do: 'The euro rate in a variable: <code>euro=$(grep EUR rates.csv | cut -d, -f2)</code>, then <code>echo "1 EUR = $euro PLN"</code>', check: async c => c.var('euro') === (await c.run(`grep EUR ${R} | cut -d, -f2`)).trim() && c.out.includes(c.var('euro')) },
+      { do: 'Today\'s date in a form good for file names: <code>date +%F</code>', check: is(/^date \+%F$/) },
+      { do: 'A dated copy, so tomorrow\'s download does not overwrite today\'s: <code>cp rates.csv rates_$(date +%F).csv</code>, then <code>ls</code>', check: async c => c.file(`${D}/rates_${await today(c)}.csv`) !== null && /^ls/.test(c.cmd) },
+      { do: '<b>Exercise.</b> Put the US dollar rate (USD) in a variable called <b>usd</b> and print <i>1 USD = … PLN</i>.', check: async c => c.var('usd') === (await c.run(`grep USD ${R} | cut -d, -f2`)).trim() && c.out.includes(c.var('usd')) },
+      { do: 'Every command reports success or failure. Search for something that is not there: <code>grep XYZ rates.csv</code>', check: is(/^grep XYZ/) },
+      { do: '<code>echo $?</code> prints the exit status of the last command: 0 means success, anything else means failure.', check: c => c.cmd === 'echo $?' && c.out.trim() === '1' },
+    ],
+  },
+  {
+    id: 'script', title: '2.2 Your first script',
+    intro: 'A script is a text file with commands that run one after another. Write it once, run it whenever you need it. The first line <code>#!/bin/bash</code> says which program runs the file; lines starting with <code>#</code> are comments for humans.',
+    steps: [
+      { do: 'A folder for scripts: <code>mkdir ~/course/scripts</code>, then <code>cd ~/course/scripts</code>', check: c => c.cwd === S },
+      { do: 'Open a new file: <code>nano report.sh</code>, paste this in (click the box to copy), then <b>Ctrl+X</b>, <b>Y</b>, <b>Enter</b>:' + pre`
+#!/bin/bash
+# Short report about today's exchange rates
+cd ~/course/data
+echo "Currencies: $(wc -l < rates.csv)"
+echo "Euro:"
+grep EUR rates.csv
+echo "Three most expensive:"
+sort -t, -k2 -nr rates.csv | head -3`, check: c => n(c.file(S + '/report.sh')) >= 3 },
+      { do: 'Run it: <code>bash report.sh</code>', check: c => /^(bash|sh) report\.sh/.test(c.cmd) && c.out.includes('EUR') },
+      { do: 'Now try running it directly: <code>./report.sh</code>. Permission denied?', check: is(/^\.\/report\.sh$/) },
+      { do: 'Look at the permissions: <code>ls -l report.sh</code>. <b>r</b> = read, <b>w</b> = write, <b>x</b> = execute. There is no x.', check: is(/^ls -l/) },
+      { do: 'Make it executable: <code>chmod +x report.sh</code>, then <code>ls -l report.sh</code> again.', check: c => c.isExec(S + '/report.sh') && /^ls -l/.test(c.cmd) },
+      { do: 'Now it works: <code>./report.sh</code>', check: c => c.cmd === './report.sh' && c.out.includes('EUR') },
+      { do: 'Without <code>./</code> it does not: <code>report.sh</code>. Bash only looks for commands in a few system folders; <code>./</code> means "the file right here".', check: is(/^report\.sh$/) },
+      { do: 'The script did <code>cd ~/course/data</code>. Where are you? <code>pwd</code>. A script runs in its own copy of the shell, so its cd does not move you.', check: c => c.cmd === 'pwd' && c.cwd === S },
+      { do: 'Script output can be redirected like any command: <code>./report.sh > ~/course/results/report.txt</code>', check: c => (c.file('~/course/results/report.txt') || '').includes('EUR') },
+      { do: '<b>Exercise.</b> Write <b>kronas.sh</b> that prints how many currencies are kronas (<i>korona</i>) and then lists them. Make it executable and run it.', hint: 'grep -c, then grep; do not forget chmod +x', check: c => c.isExec(S + '/kronas.sh') && /kronas\.sh/.test(c.cmd) && c.out.includes('korona') },
+    ],
+  },
+  {
+    id: 'args', title: '2.3 Script arguments',
+    intro: 'Words you type after a script name are its <b>arguments</b>. Inside the script, <code>$1</code> is the first, <code>$2</code> the second, <code>$#</code> how many there are. One script, many questions.',
+    steps: [
+      { do: 'In ~/course/scripts create <b>rate.sh</b>:' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+grep "$1" ~/course/data/rates.csv`, check: c => (c.file(S + '/rate.sh') || '').includes('$1') },
+      { do: 'Make it executable: <code>chmod +x rate.sh</code>', check: c => c.isExec(S + '/rate.sh') },
+      { do: 'Ask about the dollar: <code>./rate.sh USD</code>', check: c => c.cmd === './rate.sh USD' && /^USD,/.test(c.out) },
+      { do: 'Same script, different questions: <code>./rate.sh CHF</code>, then <code>./rate.sh korona</code>', check: c => c.cmd === './rate.sh korona' && n(c.out) > 1 },
+      { do: 'What if you forget the argument? <code>./rate.sh</code>. <code>$1</code> is empty, and grep with an empty pattern matches every line. We fix that in lesson 2.5.', check: c => c.cmd === './rate.sh' && n(c.out) > 10 },
+      { do: 'Make the output friendlier. Open <code>nano rate.sh</code> and replace everything with:' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
+echo "1 $1 = $rate PLN"` + 'then run <code>./rate.sh EUR</code>. (<code>^</code> means "at the start of the line", so EUR cannot match in the middle of a name.)', check: c => /^1 [A-Z]{3} = [\d.]+ PLN$/.test(c.out.trim()) },
+      { do: '<b>Exercise.</b> Write <b>top.sh</b> that prints the N most expensive currencies, where N is the first argument. Run <code>./top.sh 5</code>.', hint: 'sort -t, -k2 -nr ... | head -n "$1"', check: async c => { const m = c.cmd.match(/top\.sh (\d+)$/); return !!m && +m[1] > 0 && c.out === await c.run(`sort -t, -k2 -nr ${R} | head -${m[1]}`); } },
+    ],
+  },
+  {
+    id: 'loops', title: '2.4 Loops',
+    intro: 'A <b>for</b> loop repeats commands for each item in a list: <code>for x in a b c; do ...; done</code>. You can also type a loop over several lines: after <code>do</code> press Enter and bash shows <code>&gt;</code> until you type <code>done</code>.',
+    steps: [
+      { do: '<code>cd ~/course/data</code>, then your first loop:<br><code>for code in USD EUR GBP; do echo "Currency: $code"; done</code>', check: c => c.out === 'Currency: USD\nCurrency: EUR\nCurrency: GBP\n' },
+      { do: 'Do something useful in the loop: <code>for code in USD EUR GBP; do grep "^$code," rates.csv; done</code>', check: async c => /^for /.test(c.cmd) && c.out === await c.run(`for x in USD EUR GBP; do grep "^$x," ${R}; done`) },
+      { do: 'The list can come from a command: <code>for code in $(cut -d, -f1 rates.csv | head -5); do echo "Code: $code"; done</code>', check: c => n(c.out) === 5 && c.out.startsWith('Code: ') },
+      { do: 'Or from files: <code>for f in *.csv; do echo "$f has $(wc -l < $f) lines"; done</code>', check: c => n(c.out) >= 1 && c.out.includes(' has ') },
+      { do: 'Now in a script. In ~/course/scripts create <b>rates_for.sh</b> and make it executable. <code>"$@"</code> means "all the arguments".' + pre`
+#!/bin/bash
+# Usage: ./rates_for.sh CODE...    e.g. ./rates_for.sh USD EUR GBP
+for code in "$@"; do
+  rate=$(grep "^$code," ~/course/data/rates.csv | cut -d, -f2)
+  echo "$code: $rate"
+done`, check: c => c.isExec(S + '/rates_for.sh') },
+      { do: 'Run it with as many codes as you like: <code>./rates_for.sh USD EUR GBP CHF</code>', check: c => { const m = c.cmd.match(/rates_for\.sh((?: \S+)+)$/); return !!m && n(c.out) === m[1].trim().split(' ').length && c.out.split('\n').filter(Boolean).every(l => /^\S+: [\d.]+$/.test(l)); } },
+      { do: '<b>Exercise.</b> With one loop, save the rows of USD, EUR and CHF into separate files <b>USD.csv</b>, <b>EUR.csv</b>, <b>CHF.csv</b> in the data folder.', hint: 'grep "^$code," rates.csv > $code.csv inside the loop', check: c => ['USD', 'EUR', 'CHF'].every(x => (c.file(`${D}/${x}.csv`) || '').startsWith(x + ',')) },
+    ],
+  },
+  {
+    id: 'if', title: '2.5 Decisions: if',
+    intro: '<code>[ ... ]</code> is a test: it succeeds (status 0) or fails. <code>if</code> runs commands only when a test succeeds. <b>The spaces inside [ ] are required</b>: <code>[ -f file ]</code>, not <code>[-f file]</code>.',
+    steps: [
+      { do: 'In the data folder: <code>[ -f rates.csv ] && echo "file exists"</code>. <code>-f</code> asks "is there such a file?", and <code>&&</code> runs the next command only on success.', check: c => c.out === 'file exists\n' },
+      { do: 'With if and else: <code>if [ -f rates.csv ]; then echo "found"; else echo "missing"; fi</code>', check: c => /^if /.test(c.cmd) && c.out === 'found\n' },
+      { do: 'Press <b>↑</b> and change rates.csv to <b>nothere.csv</b>.', check: c => /^if /.test(c.cmd) && c.out === 'missing\n' },
+      { do: 'Compare numbers: <code>rows=$(wc -l < rates.csv)</code>, then <code>if [ $rows -gt 30 ]; then echo "big table"; fi</code>. (<code>-gt</code> = greater than. It works only on whole numbers, not on rates like 4.36.)', check: c => /-gt/.test(c.cmd) && c.out === 'big table\n' },
+      { do: 'Protect rate.sh from a missing argument. In ~/course/scripts, <code>nano rate.sh</code>:' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+if [ -z "$1" ]; then
+  echo "Usage: ./rate.sh CODE    (e.g. ./rate.sh USD)"
+  exit 1
+fi
+rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
+echo "1 $1 = $rate PLN"` + '<code>-z</code> means "is empty", <code>exit 1</code> stops the script with an error. Then run <code>./rate.sh</code> with no argument.', check: c => c.cmd === './rate.sh' && /usage/i.test(c.out) },
+      { do: 'Check the exit status: <code>echo $?</code>', check: c => c.cmd === 'echo $?' && c.out.trim() === '1' },
+      { do: '<b>Exercise.</b> <code>./rate.sh XYZ</code> prints <i>1 XYZ =  PLN</i>. Change rate.sh so it prints <i>Unknown currency: XYZ</i> instead, and try it.', hint: 'after rate=..., add if [ -z "$rate" ]; then ... exit 1; fi', check: async c => { const m = c.cmd.match(/^\.\/rate\.sh (\S+)$/); return !!m && (await c.run(`grep -c "^${m[1]}," ${R}`)).trim() === '0' && /unknown/i.test(c.out) && c.out.includes(m[1]); } },
+      { do: 'Put it all together: a script that downloads today\'s rates into a dated file. Create <b>get_rates.sh</b> in ~/course/scripts, make it executable and run it.' + pre`
+#!/bin/bash
+# Downloads today's NBP rates into ~/course/data/rates_YYYY-MM-DD.csv
+out=$HOME/course/data/rates_$(date +%F).csv
+curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r '.[0].rates[] | "\(.code),\(.mid),\(.currency)"' > "$out"
+if [ -s "$out" ]; then
+  echo "Saved $(wc -l < "$out") rates to $out"
+else
+  echo "Download failed"
+  exit 1
+fi` + '<code>-s</code> means "exists and is not empty". Run this every day and you collect a history of rates.', check: async c => /get_rates\.sh/.test(c.cmd) && /^Saved \d+ rates/.test(c.out) && n(c.file(`${D}/rates_${await today(c)}.csv`)) > 10 },
+    ],
+  },
+  {
+    id: 'hw2', title: '2.H Homework 2 (practice run)',
+    intro: 'Practise here, then do it for real in Cloud Shell and send a screenshot of <code>ls -l ~/course/homework2</code> and of <code>cat ~/course/homework2/all.txt</code>.',
+    steps: [
+      { do: 'Create the folder <b>~/course/homework2</b> and go into it.', check: c => c.cwd === '~/course/homework2' },
+      { do: 'Write an executable script <b>summary.sh</b> that takes one word (e.g. <i>korona</i>) and prints: how many currencies match it, then the matching rows sorted from the cheapest. Without an argument it prints a usage message and exits with status 1.', check: c => c.isExec('~/course/homework2/summary.sh') },
+      { do: 'Run <code>./summary.sh korona</code>', check: async c => { if (!/summary\.sh korona$/.test(c.cmd)) return false; const codes = (await c.run(`grep korona ${R} | cut -d, -f1`)).split('\n').filter(Boolean); return codes.every(x => c.out.includes(x)) && c.out.includes(String(codes.length)); } },
+      { do: 'Run <code>./summary.sh</code> with no argument.', check: c => /summary\.sh$/.test(c.cmd) && /usage/i.test(c.out) },
+      { do: 'With one for loop, run summary.sh for <i>dolar</i>, <i>korona</i> and <i>frank</i> and save all the output to <b>all.txt</b>.', hint: 'for w in ...; do ./summary.sh $w; done > all.txt', check: c => ['USD', 'CZK', 'CHF'].every(x => (c.file('~/course/homework2/all.txt') || '').includes(x)) },
+      { do: 'Run <code>ls -l ~/course/homework2</code>', check: c => /^ls -l/.test(c.cmd) && c.out.includes('all.txt') && c.out.includes('rwx') },
+    ],
+  },
+);
 
 if (typeof module !== 'undefined') module.exports = { LESSONS };

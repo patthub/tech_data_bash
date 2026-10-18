@@ -1,5 +1,6 @@
 // Tiny bash simulator: a virtual file system plus the commands used in class.
-// ponytail: a teaching subset, not real bash. No variables, no subshells, no scripts yet.
+// ponytail: a teaching subset of bash: variables, $(...), pipes, redirects, scripts, for, if.
+// No while/case/functions/arithmetic; add them when a class needs them.
 const HOME = '/home/student';
 
 const NBP_SAMPLE = '[{"table":"A","no":"202/A/NBP/2026","effectiveDate":"2026-10-16","rates":[{"currency":"bat (Tajlandia)","code":"THB","mid":0.1162},{"currency":"dolar amerykański","code":"USD","mid":3.8827},{"currency":"dolar australijski","code":"AUD","mid":2.7025},{"currency":"dolar Hongkongu","code":"HKD","mid":0.4947},{"currency":"dolar kanadyjski","code":"CAD","mid":2.7417},{"currency":"dolar nowozelandzki","code":"NZD","mid":2.2015},{"currency":"dolar singapurski","code":"SGD","mid":3.0338},{"currency":"euro","code":"EUR","mid":4.3661},{"currency":"forint (Węgry)","code":"HUF","mid":0.01202},{"currency":"frank szwajcarski","code":"CHF","mid":4.7099},{"currency":"funt szterling","code":"GBP","mid":5.1746},{"currency":"hrywna (Ukraina)","code":"UAH","mid":0.0865},{"currency":"jen (Japonia)","code":"JPY","mid":0.024574},{"currency":"korona czeska","code":"CZK","mid":0.1794},{"currency":"korona duńska","code":"DKK","mid":0.5841},{"currency":"korona islandzka","code":"ISK","mid":0.032057},{"currency":"korona norweska","code":"NOK","mid":0.4108},{"currency":"korona szwedzka","code":"SEK","mid":0.3925},{"currency":"lej rumuński","code":"RON","mid":0.8179},{"currency":"lira turecka","code":"TRY","mid":0.0783},{"currency":"nowy izraelski szekel","code":"ILS","mid":1.2557},{"currency":"peso chilijskie","code":"CLP","mid":0.003956},{"currency":"peso filipińskie","code":"PHP","mid":0.0617},{"currency":"peso meksykańskie","code":"MXN","mid":0.2112},{"currency":"rand (Republika Południowej Afryki)","code":"ZAR","mid":0.2363},{"currency":"real (Brazylia)","code":"BRL","mid":0.7615},{"currency":"ringgit (Malezja)","code":"MYR","mid":0.9512},{"currency":"rupia indonezyjska","code":"IDR","mid":0.00021565},{"currency":"rupia indyjska","code":"INR","mid":0.040883},{"currency":"won południowokoreański","code":"KRW","mid":0.002914},{"currency":"yuan renminbi (Chiny)","code":"CNY","mid":0.5806},{"currency":"SDR (MFW)","code":"XDR","mid":5.2745}]}]';
@@ -30,8 +31,15 @@ const HELP = {
   jq: 'Usage: jq [-r] FILTER\nCommand-line JSON processor (simulator supports paths like .[0].rates[] ,\n.field, length, and string templates like "\\(.code),\\(.mid)").\n  -r   output raw strings, not JSON texts',
   clear: 'Usage: clear\nClear the terminal screen.',
   whoami: 'Usage: whoami\nPrint the user name.',
-  date: 'Usage: date\nDisplay the current time.',
+  date: 'Usage: date [+FORMAT]\nDisplay the current time, optionally in FORMAT.\n  %F   full date, like 2026-10-18\n  %Y %m %d   year, month, day\n  %H %M %S   hour, minute, second',
+  bash: 'Usage: bash SCRIPT [ARGUMENTS]...\nRun the commands in SCRIPT, one after another.',
+  chmod: 'Usage: chmod MODE FILE...\nChange file permissions.\n  +x   make FILE executable, so it can be run as ./FILE\n  -x   take that away',
+  test: 'Usage: test EXPRESSION   or   [ EXPRESSION ]\nExit with status 0 (true) or 1 (false). Spaces inside [ ] are required!\n  -f FILE   FILE exists and is a regular file\n  -d DIR    DIR exists and is a directory\n  -s FILE   FILE exists and is not empty\n  -z TEXT   TEXT is empty\n  -n TEXT   TEXT is not empty\n  A = B     the texts are equal (!= not equal)\n  A -eq B   the whole numbers are equal (-ne -lt -le -gt -ge)',
+  seq: 'Usage: seq [FIRST [STEP]] LAST\nPrint numbers from FIRST to LAST.',
+  export: 'Usage: export NAME=VALUE\nSet a variable (and pass it on to programs started from here).',
+  exit: 'Usage: exit [N]\nStop a script with exit status N (0 = success).',
 };
+HELP['['] = HELP.test;
 
 const lines = s => (s === '' ? [] : s.replace(/\n$/, '').split('\n'));
 const unlines = a => (a.length ? a.join('\n') + '\n' : '');
@@ -49,37 +57,121 @@ function newFs() {
   });
 }
 
-// Split a command line into words and operators. Returns {open: true} on an unclosed quote.
-function tokenize(line) {
+// Lexer. Words are lists of parts: {t, q} with q = 'n' (unquoted), 'd' ("double"), 's' ('single' or \escaped),
+// or {cmd, q} for $(...). Variables are expanded later, at run time. Returns {open: true} on an unclosed quote.
+function lex(src) {
   const toks = [];
   let cur = null, i = 0;
+  const word = () => (cur = cur || { parts: [] });
+  const part = (t, q) => { const p = word().parts.at(-1); if (p && p.q === q && p.t !== undefined) p.t += t; else cur.parts.push({ t, q }); };
   const push = () => { if (cur) toks.push(cur); cur = null; };
-  while (i < line.length) {
-    const c = line[i];
-    if (c === ' ' || c === '\t') { push(); i++; continue; }
-    if (c === '#' && !cur) break;
-    if (c === '|' || c === ';' || c === '<') { push(); toks.push({ op: c }); i++; continue; }
-    if (c === '&' && line[i + 1] === '&') { push(); toks.push({ op: '&&' }); i += 2; continue; }
-    if (c === '>') { push(); const two = line[i + 1] === '>'; toks.push({ op: two ? '>>' : '>' }); i += two ? 2 : 1; continue; }
-    cur = cur || { v: '', quoted: false, glob: false };
-    if (c === "'") {
-      const j = line.indexOf("'", i + 1);
-      if (j < 0) return { open: true };
-      cur.v += line.slice(i + 1, j); cur.quoted = true; i = j + 1; continue;
+  const close = j => { // j is at the '(' of $( ; returns the index just past the matching ')', or -1
+    let depth = 0, q = null;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (q) { if (c === '\\' && q === '"') j++; else if (c === q) q = null; continue; }
+      if (c === "'" || c === '"') q = c;
+      else if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) return j + 1;
     }
+    return -1;
+  };
+  const subst = (j, q) => { const e = close(j + 1); if (e < 0) return -1; word().parts.push({ cmd: src.slice(j + 2, e - 1), q }); return e; };
+  while (i < src.length) {
+    const c = src[i], c2 = src.slice(i, i + 2);
+    if (c === ' ' || c === '\t' || c === '\r') { push(); i++; continue; }
+    if (c === '#' && !cur) { while (i < src.length && src[i] !== '\n') i++; continue; }
+    if (c === '\n' || c === ';') { push(); toks.push({ op: ';' }); i++; continue; }
+    if (c2 === '&&' || c2 === '||' || c2 === '>>') { push(); toks.push({ op: c2 }); i += 2; continue; }
+    if (c === '|' || c === '>' || c === '<') { push(); toks.push({ op: c }); i++; continue; }
+    if (c === "'") { const j = src.indexOf("'", i + 1); if (j < 0) return { open: true }; part(src.slice(i + 1, j), 's'); i = j + 1; continue; }
     if (c === '"') {
-      let j = i + 1, s = '';
-      while (j < line.length && line[j] !== '"') { if (line[j] === '\\' && '"\\$`'.includes(line[j + 1])) j++; s += line[j++]; }
-      if (j >= line.length) return { open: true };
-      cur.v += s; cur.quoted = true; i = j + 1; continue;
+      let j = i + 1;
+      part('', 'd');
+      while (j < src.length && src[j] !== '"') {
+        if (src[j] === '\\' && '"\\$`'.includes(src[j + 1])) { part(src[j + 1], 's'); j += 2; }
+        else if (src.startsWith('$(', j)) { j = subst(j, 'd'); if (j < 0) return { open: true }; }
+        else part(src[j++], 'd');
+      }
+      if (j >= src.length) return { open: true };
+      i = j + 1; continue;
     }
-    if (c === '\\') { if (i + 1 >= line.length) return { open: true }; cur.v += line[i + 1]; i += 2; continue; }
-    if (c === '~' && cur.v === '' && !cur.quoted && /^(\/|\s|$)/.test(line.slice(i + 1, i + 2))) { cur.v = HOME; i++; continue; }
-    if (c === '*' || c === '?') cur.glob = true;
-    cur.v += c; i++;
+    if (c === '\\') { if (i + 1 >= src.length) return { open: true }; if (src[i + 1] !== '\n') part(src[i + 1], 's'); i += 2; continue; }
+    if (c2 === '$(') { i = subst(i, 'n'); if (i < 0) return { open: true }; continue; }
+    if (c === '~' && !cur && /^(\/|\s|$)/.test(src.slice(i + 1, i + 2))) { part(HOME, 's'); i++; continue; }
+    part(c, 'n'); i++;
   }
   push();
   return { toks };
+}
+
+const plain = w => (w && !w.op && w.parts.length === 1 && w.parts[0].q === 'n' ? w.parts[0].t : null);
+const REDIR = ['>', '>>', '<'];
+
+// Parser: list of and-or chains of pipelines of commands (simple, for, if).
+// Throws {incomplete: true} when more input is needed (bash shows the > prompt) or {syntax: token}.
+function parse(toks) {
+  let i = 0;
+  const kw = w => plain(toks[i]) === w;
+  const fail = () => { throw toks[i] ? { syntax: toks[i].op === ';' ? 'newline' : toks[i].op || plain(toks[i]) || '?' } : { incomplete: true }; };
+  const seps = () => { while (toks[i]?.op === ';') i++; };
+  const list = stops => {
+    const items = [];
+    seps();
+    while (i < toks.length && !stops.some(kw)) {
+      items.push(andOr());
+      if (i < toks.length && toks[i].op !== ';') fail();
+      seps();
+    }
+    if (stops.length && i >= toks.length) throw { incomplete: true };
+    return items;
+  };
+  const andOr = () => {
+    const node = { first: pipe(), rest: [] };
+    while (toks[i]?.op === '&&' || toks[i]?.op === '||') { const op = toks[i++].op; seps(); node.rest.push({ op, pipe: pipe() }); }
+    return node;
+  };
+  const pipe = () => { const cmds = [command()]; while (toks[i]?.op === '|') { i++; seps(); cmds.push(command()); } return cmds; };
+  const redirs = node => {
+    while (REDIR.includes(toks[i]?.op)) { const op = toks[i++].op; if (!toks[i] || toks[i].op) fail(); node.redirs.push({ op, word: toks[i++] }); }
+    return node;
+  };
+  const forClause = () => {
+    i++;
+    const name = plain(toks[i]);
+    if (!name || !/^[A-Za-z_]\w*$/.test(name)) fail();
+    i++;
+    let words = null;
+    if (kw('in')) { i++; words = []; while (toks[i] && !toks[i].op) words.push(toks[i++]); }
+    seps();
+    if (!kw('do')) fail();
+    i++;
+    const body = list(['done']);
+    i++;
+    return { type: 'for', name, words, body, redirs: [] };
+  };
+  const ifClause = () => {
+    i++;
+    const cond = list(['then']);
+    i++;
+    const then = list(['elif', 'else', 'fi']);
+    if (kw('elif')) return { type: 'if', cond, then, els: [{ first: [ifClause()], rest: [] }], redirs: [] };
+    let els = null;
+    if (kw('else')) { i++; els = list(['fi']); }
+    i++;
+    return { type: 'if', cond, then, els, redirs: [] };
+  };
+  const command = () => {
+    if (i >= toks.length) throw { incomplete: true };
+    if (kw('for')) return redirs(forClause());
+    if (kw('if')) return redirs(ifClause());
+    if (['then', 'do', 'done', 'fi', 'else', 'elif'].some(kw)) fail();
+    const node = { type: 'simple', words: [], redirs: [] };
+    while (i < toks.length && (!toks[i].op || REDIR.includes(toks[i].op))) toks[i].op ? redirs(node) : node.words.push(toks[i++]);
+    if (!node.words.length && !node.redirs.length) fail();
+    return node;
+  };
+  return list([]);
 }
 
 // Parse short flags. `valued` lists flags that take a value (e.g. 'tk' for sort -t, -k2).
@@ -106,9 +198,12 @@ class Shell {
     this.fs = saved?.fs || newFs();
     this.cwd = saved?.cwd || HOME;
     this.hist = saved?.hist || [];
+    this.env = { HOME, USER: 'student', ...saved?.env };
+    this.args = ['bash'];
+    this.code = 0;
     this.last = null;
   }
-  save() { return { fs: this.fs, cwd: this.cwd, hist: this.hist }; }
+  save() { return { fs: this.fs, cwd: this.cwd, hist: this.hist, env: this.env }; }
 
   abs(p) {
     if (p === '~' || p.startsWith('~/')) p = HOME + p.slice(1);
@@ -147,77 +242,235 @@ class Shell {
     return m.length ? m.map(x => pat.slice(0, k + 1) + x) : [pat];
   }
 
-  // Run one line. Returns {out: text for the screen, stdout, clear, nano, open}.
+  // Run one line. Returns {screen: [{text, err}], stdout, clear, nano} or {open: true} if more input is needed.
   async run(line, { record = true } = {}) {
-    const t = tokenize(line);
-    if (t.open) return { open: true };
+    const lx = lex(line);
+    if (lx.open) return { open: true };
+    let ast = null, syntax = null;
+    try { ast = parse(lx.toks); } catch (e) { if (e.incomplete) return { open: true }; syntax = e.syntax; }
     if (record && line.trim()) this.hist.push(line);
     const prevCwd = this.cwd;
-    let out = '', stdout = '', code = 0, extra = {};
-    let group = [], skip = false;
-    const flush = async () => {
-      if (group.length && !skip) {
-        const r = await this.pipeline(group);
-        out += r.out; stdout = r.stdout; code = r.code; Object.assign(extra, r.extra);
-      }
-      group = [];
-    };
-    for (const tok of t.toks) {
-      if (tok.op === ';') { await flush(); skip = false; }
-      else if (tok.op === '&&') { await flush(); skip = skip || code !== 0; }
-      else group.push(tok);
+    this.screen = [];
+    this.flags = {};
+    if (syntax) this.err(`bash: syntax error near unexpected token \`${syntax}'\n`);
+    else {
+      try { await this.execList(ast, { stdin: '', capture: false }); }
+      catch (e) { if (e.exit === undefined) throw e; this.screen.push({ text: 'exit\n(This is a practice terminal, there is nowhere to exit to.)\n' }); }
     }
-    await flush();
-    if (record) this.last = { cmd: line.trim(), stdout: stdout.replace(/\x1b\[\d+m/g, ''), prevCwd };
-    return { out, stdout, ...extra };
+    const stdout = this.screen.filter(c => !c.err).map(c => c.text).join('').replace(/\x1b\[\d+m/g, '');
+    if (record) this.last = { cmd: line.trim(), stdout, prevCwd };
+    return { screen: this.screen, stdout, ...this.flags };
   }
 
-  async pipeline(toks) {
-    const segs = [[]];
-    for (const t of toks) t.op === '|' ? segs.push([]) : segs.at(-1).push(t);
-    let stdin = '', err = '', code = 0, extra = {};
-    for (let s = 0; s < segs.length; s++) {
-      const words = [];
-      let redir = null, input = null;
-      const seg = segs[s];
-      for (let i = 0; i < seg.length; i++) {
-        const t = seg[i];
-        if (t.op) {
-          const target = seg[i + 1];
-          if (!target || target.op) return { out: err + "bash: syntax error near unexpected token `newline'\n", stdout: '', code: 2, extra };
-          if (t.op === '<') input = target.v; else redir = { file: target.v, append: t.op === '>>' };
-          i++;
-        } else words.push(...(t.glob ? this.glob(t.v) : [t.v]));
-      }
-      if (!words.length) { if (segs.length > 1) return { out: err + "bash: syntax error near unexpected token `|'\n", stdout: '', code: 2, extra }; continue; }
-      if (input !== null) { const r = this.read(input, 'bash'); if (r.err) { err += r.err; stdin = ''; code = 1; continue; } stdin = r.content; }
-      const tty = s === segs.length - 1 && !redir;
-      const [name, ...args] = words;
-      let r;
-      if (args.includes('--help') && HELP[name]) r = { out: HELP[name] + '\n' };
-      else if (this.cmds[name]) r = (await this.cmds[name].call(this, args, stdin, tty)) || {};
-      else r = { err: `bash: ${name}: command not found\n`, code: 127 };
-      err += r.err || '';
-      code = r.code ?? (r.err ? 1 : 0);
-      if (r.clear) extra.clear = true;
-      if (r.nano) extra.nano = r.nano;
-      stdin = r.out || '';
-      if (redir) { err += this.write(redir.file, stdin, redir.append); stdin = ''; }
+  // io = {stdin, capture, buf}: captured output goes to buf.out (pipes, redirects, $(...)), the rest to the screen.
+  emit(io, text) { if (text) io.capture ? (io.buf.out += text) : this.screen.push({ text }); }
+  err(text) { if (text) this.screen.push({ text, err: true }); }
+
+  async execText(src, io) {
+    const lx = lex(src);
+    try { if (lx.open) throw { incomplete: true }; return await this.execList(parse(lx.toks), io); }
+    catch (e) { if (e.exit !== undefined) throw e; if (!e.incomplete && !e.syntax) throw e; this.err(`bash: syntax error in: ${src}\n`); return 2; }
+  }
+  async execList(items, io) {
+    let code = 0;
+    for (const it of items) code = await this.execAndOr(it, io);
+    return code;
+  }
+  async execAndOr(n, io) {
+    let code = await this.execPipe(n.first, io);
+    for (const { op, pipe } of n.rest) if ((op === '&&') === (code === 0)) code = await this.execPipe(pipe, io);
+    return (this.code = code);
+  }
+  async execPipe(cmds, io) {
+    let stdin = io.stdin, code = 0;
+    for (let k = 0; k < cmds.length; k++) {
+      const last = k === cmds.length - 1;
+      const sub = last ? { ...io, stdin } : { stdin, capture: true, buf: { out: '' } };
+      code = await this.execCommand(cmds[k], sub);
+      if (!last) stdin = sub.buf.out;
     }
-    return { out: err + stdin, stdout: stdin, code, extra };
+    return code;
+  }
+  async execCommand(node, io) {
+    let inner = io, outFile = null;
+    for (const r of node.redirs) {
+      const [target] = await this.expand(r.word, false);
+      if (r.op === '<') {
+        const f = this.read(target, 'bash');
+        if (f.err) { this.err(f.err); return 1; }
+        inner = { ...inner, stdin: f.content };
+      } else {
+        // Like bash, > empties the file before the command runs (so `sort f > f` loses f).
+        if (r.op === '>') { const e = this.write(target, '', false); if (e) { this.err(e); return 1; } }
+        outFile = target;
+        inner = { ...inner, capture: true, buf: { out: '' } };
+      }
+    }
+    const code = node.type === 'for' ? await this.execFor(node, inner) : node.type === 'if' ? await this.execIf(node, inner) : await this.execSimple(node, inner);
+    if (outFile) this.err(this.write(outFile, inner.buf.out, true));
+    return code;
+  }
+  async execFor(n, io) {
+    let items = this.args.slice(1), code = 0;
+    if (n.words) { items = []; for (const w of n.words) items.push(...(await this.expand(w, true))); }
+    for (const it of items) { this.env[n.name] = it; code = await this.execList(n.body, io); }
+    return code;
+  }
+  async execIf(n, io) {
+    if ((await this.execList(n.cond, io)) === 0) return this.execList(n.then, io);
+    return n.els ? this.execList(n.els, io) : 0;
+  }
+  async execSimple(node, io) {
+    const words = [...node.words];
+    while (words.length) { // NAME=value
+      const p0 = words[0].parts[0], m = p0.q === 'n' && p0.t?.match(/^([A-Za-z_]\w*)=/);
+      if (!m) break;
+      const w = words.shift();
+      [this.env[m[1]]] = await this.expand({ parts: [{ t: p0.t.slice(m[0].length), q: 'd' }, ...w.parts.slice(1)] }, false);
+    }
+    const argv = [];
+    for (const w of words) argv.push(...(await this.expand(w, true)));
+    if (!argv.length) return this.code;
+    const [name, ...args] = argv;
+    let r;
+    if (name.includes('/')) r = await this.runFile(name, args, io);
+    else if (args.includes('--help') && HELP[name]) r = { out: HELP[name] + '\n' };
+    else if (this.cmds[name]) r = (await this.cmds[name].call(this, args, io.stdin, !io.capture, io)) || {};
+    else r = { err: `bash: ${name}: command not found\n`, code: 127 };
+    this.err(r.err);
+    this.emit(io, r.out);
+    if (r.clear) { this.screen.length = 0; this.flags.clear = true; }
+    if (r.nano) this.flags.nano = r.nano;
+    return r.code ?? (r.err ? 1 : 0);
+  }
+
+  async expand(w, split) {
+    if (w.parts.length === 1 && w.parts[0].q === 'd' && w.parts[0].t === '$@') return this.args.slice(1);
+    let s = '', quoted = false, expanded = false, glob = false;
+    for (const p of w.parts) {
+      if (p.cmd !== undefined) {
+        const io = { stdin: '', capture: true, buf: { out: '' } };
+        await this.execText(p.cmd, io);
+        s += io.buf.out.replace(/\n+$/, '');
+        if (p.q === 'd') quoted = true; else expanded = true;
+      } else if (p.q === 's') { s += p.t; quoted = true; }
+      else {
+        s += p.t.replace(/\$(?:\{(\w+)\}|([A-Za-z_]\w*)|([?#@*0-9]))/g, (_, a, b, c) => { if (p.q === 'n') expanded = true; return this.getVar(a || b || c); });
+        if (p.q === 'd') quoted = true; else if (/[*?]/.test(p.t)) glob = true;
+      }
+    }
+    if (!split) return [s];
+    const words = expanded && !quoted ? s.split(/\s+/).filter(Boolean) : [s];
+    return glob ? words.flatMap(x => this.glob(x)) : words;
+  }
+  getVar(n) {
+    if (n === '?') return String(this.code);
+    if (n === '#') return String(this.args.length - 1);
+    if (n === '@' || n === '*') return this.args.slice(1).join(' ');
+    if (/^\d$/.test(n)) return this.args[n] ?? '';
+    if (n === 'PWD') return this.cwd;
+    return this.env[n] ?? '';
+  }
+
+  async runFile(path, args, io) {
+    const n = this.node(path);
+    if (!n) return { err: `bash: ${path}: No such file or directory\n`, code: 127 };
+    if (n.type === 'dir') return { err: `bash: ${path}: Is a directory\n`, code: 126 };
+    if (!n.exec) return { err: `bash: ${path}: Permission denied\n`, code: 126 };
+    return this.runScript(path, args, io);
+  }
+  // A script runs in its own copy of the shell: its cd and variables do not leak back.
+  async runScript(path, args, io) {
+    const f = this.read(path, 'bash');
+    if (f.err) return { err: f.err, code: 127 };
+    const lx = lex(f.content);
+    let ast;
+    try { if (lx.open) throw { incomplete: true }; ast = parse(lx.toks); }
+    catch (e) { return { err: e.syntax ? `${path}: syntax error near unexpected token \`${e.syntax}'\n` : `${path}: syntax error: unexpected end of file (a missing quote, done or fi?)\n`, code: 2 }; }
+    const saved = { env: { ...this.env }, cwd: this.cwd, args: this.args };
+    this.args = [path, ...args];
+    try { return { code: await this.execList(ast, io) }; }
+    catch (e) { if (e.exit === undefined) throw e; return { code: e.exit }; }
+    finally { Object.assign(this, saved); }
+  }
+
+  // What lesson checks see after each command.
+  ctx() {
+    const sh = this;
+    return {
+      cmd: this.last.cmd.replace(/\s+/g, ' '), out: this.last.stdout, cwd: this.short(), prevCwd: this.short(this.last.prevCwd),
+      file: p => { const n = sh.node(p); return n?.type === 'file' ? n.content : null; },
+      isDir: p => sh.node(p)?.type === 'dir',
+      isExec: p => !!sh.node(p)?.exec,
+      var: name => sh.env[name],
+      run: async line => { const keep = { cwd: sh.cwd, env: { ...sh.env }, code: sh.code }; const r = await sh.run(line, { record: false }); Object.assign(sh, keep); return r.stdout; },
+    };
   }
 }
 
 Shell.prototype.cmds = {
   echo(args) { const { f, rest } = opts(args); const s = (f.n ? rest : args).join(' '); return { out: f.n ? s : s + '\n' }; },
   whoami: () => ({ out: 'student\n' }),
-  date: () => ({ out: new Date().toString().replace(/ \(.*\)$/, '') + '\n' }),
+  date(args) {
+    const d = new Date(), p = x => String(x).padStart(2, '0');
+    const F = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    if (args[0]?.startsWith('+')) return { out: args[0].slice(1).replace(/%([YmdHMSF%])/g, (_, k) => ({ Y: d.getFullYear(), m: p(d.getMonth() + 1), d: p(d.getDate()), H: p(d.getHours()), M: p(d.getMinutes()), S: p(d.getSeconds()), F, '%': '%' })[k]) + '\n' };
+    return { out: d.toString().replace(/ \(.*\)$/, '') + '\n' };
+  },
+  true: () => ({ code: 0 }),
+  false: () => ({ code: 1 }),
+  seq(args) {
+    const [a, b, c] = args.map(Number);
+    const [first, step, last] = args.length === 1 ? [1, 1, a] : args.length === 2 ? [a, 1, b] : [a, b, c];
+    if ([first, step, last].some(Number.isNaN) || !step) return { err: 'seq: invalid argument\n' };
+    const out = [];
+    for (let x = first; step > 0 ? x <= last : x >= last; x += step) out.push(x);
+    return { out: unlines(out) };
+  },
+  export(args) { for (const a of args) { const m = a.match(/^([A-Za-z_]\w*)=(.*)$/s); if (m) this.env[m[1]] = m[2]; } },
+  bash(args, stdin, tty, io) { return args[0] ? this.runScript(args[0], args.slice(1), io) : { err: 'bash: this simulator runs script files only: bash SCRIPT.sh\n' }; },
+  sh(args, stdin, tty, io) { return this.cmds.bash.call(this, args, stdin, tty, io); },
+  chmod(args) {
+    const [mode, ...files] = args;
+    if (!files.length) return { err: 'chmod: missing operand\n' };
+    if (!/^[0-7]{3,4}$/.test(mode) && !/^[ugoa]*[-+=][rwx]+$/.test(mode)) return { err: `chmod: invalid mode: '${mode}'\n` };
+    let err = '';
+    for (const p of files) {
+      const n = this.node(p);
+      if (!n) err += `chmod: cannot access '${p}': No such file or directory\n`;
+      else if (/^\d/.test(mode)) n.exec = (parseInt(mode.at(-3), 8) & 1) === 1;
+      else if (mode.includes('x')) n.exec = !mode.includes('-');
+    }
+    return { err };
+  },
+  '['(args) { return args.at(-1) === ']' ? this.cmds.test.call(this, args.slice(0, -1)) : { err: "bash: [: missing `]' (spaces matter: [ -f file ])\n", code: 2 }; },
+  test(args) {
+    const a = [...args], neg = a[0] === '!';
+    if (neg) a.shift();
+    const num = x => { if (!/^-?\d+$/.test(x)) throw `bash: [: ${x}: integer expression expected\n`; return parseInt(x); };
+    let ok;
+    try {
+      if (a.length === 0) ok = false;
+      else if (a.length === 1) ok = a[0] !== '';
+      else if (a.length === 2) {
+        const [op, x] = a, n = this.node(x);
+        ok = { '-f': n?.type === 'file', '-d': n?.type === 'dir', '-e': !!n, '-s': n?.type === 'file' && n.content.length > 0, '-x': !!n?.exec, '-z': x === '', '-n': x !== '' }[op];
+        if (ok === undefined) throw `bash: [: ${op}: unary operator expected\n`;
+      } else if (a.length === 3) {
+        const [x, op, y] = a;
+        const ops = { '=': () => x === y, '==': () => x === y, '!=': () => x !== y, '-eq': () => num(x) === num(y), '-ne': () => num(x) !== num(y), '-gt': () => num(x) > num(y), '-lt': () => num(x) < num(y), '-ge': () => num(x) >= num(y), '-le': () => num(x) <= num(y) };
+        if (!ops[op]) throw `bash: [: ${op}: binary operator expected\n`;
+        ok = ops[op]();
+      } else throw 'bash: [: too many arguments (put "quotes" around variables)\n';
+    } catch (e) { if (typeof e !== 'string') throw e; return { err: e, code: 2 }; }
+    return { code: ok !== neg ? 0 : 1 };
+  },
   clear: () => ({ clear: true }),
   pwd() { return { out: this.cwd + '\n' }; },
   history() { return { out: unlines(this.hist.map((h, i) => `${String(i + 1).padStart(5)}  ${h}`)) }; },
-  exit: () => ({ out: 'This is a practice terminal, there is nowhere to exit to. Just close the tab when you are done.\n' }),
+  exit(args) { throw { exit: args[0] !== undefined ? parseInt(args[0]) || 0 : this.code }; },
   man: args => ({ err: `man: no manual pages here. Try: ${args[0] || 'ls'} --help\n` }),
-  help() { return { out: 'Commands in this simulator:\n  ' + Object.keys(this.cmds).sort().join(' ') + '\nAdd --help to any command to see its options, e.g. sort --help\n' }; },
+  help() { return { out: 'Commands in this simulator:\n  ' + Object.keys(this.cmds).filter(c => /^\w/.test(c)).sort().join(' ') + '\nAdd --help to any command to see its options, e.g. sort --help\n' }; },
 
   cd(args) {
     if (args.length > 1) return { err: 'bash: cd: too many arguments\n' };
@@ -231,10 +484,10 @@ Shell.prototype.cmds = {
     const targets = rest.length ? rest : ['.'];
     let out = '', err = '';
     const row = (name, n) => {
-      const shown = tty && n.type === 'dir' ? blue(name) : name;
+      const shown = !tty ? name : n.type === 'dir' ? blue(name) : n.exec ? `\x1b[32m${name}\x1b[0m` : name;
       if (!f.l) return shown;
       const size = n.type === 'dir' ? 4096 : new TextEncoder().encode(n.content).length;
-      return `${n.type === 'dir' ? 'drwxr-xr-x' : '-rw-r--r--'} 1 student student ${String(size).padStart(5)} ${mdate(n.mtime)} ${shown}`;
+      return `${n.type === 'dir' ? 'drwxr-xr-x' : n.exec ? '-rwxr-xr-x' : '-rw-r--r--'} 1 student student ${String(size).padStart(5)} ${mdate(n.mtime)} ${shown}`;
     };
     const show = items => (f.l || !tty ? unlines(items) : items.length ? items.join('  ') + '\n' : '');
     const dirs = [];
@@ -480,4 +733,4 @@ function jqPath(p, v) {
   return st;
 }
 
-if (typeof module !== 'undefined') module.exports = { Shell, HOME, tokenize };
+if (typeof module !== 'undefined') module.exports = { Shell, HOME };

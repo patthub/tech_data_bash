@@ -38,12 +38,15 @@
   code { font: 13px ui-monospace, Menlo, Consolas, monospace; background: color-mix(in srgb, var(--accent) 12%, transparent); padding: 1px 4px; border-radius: 4px; word-break: break-word; }
   li.step code { cursor: pointer; }
   li.step code:hover { outline: 1px solid var(--accent); }
+  li.step pre { font: 12.5px/1.45 ui-monospace, Menlo, Consolas, monospace; background: var(--term-bg); color: var(--term-text); padding: 8px 10px; border-radius: 6px; overflow-x: auto; cursor: copy; margin: 6px 0 2px; position: relative; }
+  li.step pre:hover::after { content: "click to copy"; position: absolute; top: 4px; right: 8px; font-size: 11px; color: var(--muted); }
+  li.step pre.copied::after { content: "copied ✓"; }
   .hint { font-size: 13px; color: var(--muted); }
   .hint button { font-size: 12px; padding: 1px 6px; }
   .done-box { margin-top: 12px; padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 15%, transparent); }
   #term { background: var(--term-bg); color: var(--term-text); font: 14px/1.45 ui-monospace, Menlo, Consolas, monospace; padding: 12px 14px; overflow-y: auto; cursor: text; min-width: 0; }
   #out { white-space: pre-wrap; word-break: break-word; }
-  .p-user { color: var(--term-prompt); } .p-path { color: var(--term-path); } .err { color: var(--term-err); } .dir { color: var(--term-path); font-weight: bold; }
+  .p-user { color: var(--term-prompt); } .p-path { color: var(--term-path); } .err { color: var(--term-err); } .dir { color: var(--term-path); font-weight: bold; } .exe { color: var(--term-prompt); font-weight: bold; }
   #line { display: flex; white-space: pre; }
   #cmd { flex: 1; background: transparent; border: 0; outline: 0; color: inherit; font: inherit; padding: 0; caret-color: var(--term-prompt); }
   #explorer h2 { font: 600 12px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
@@ -101,7 +104,8 @@ let buffer = null, histPos = sh.hist.length, busy = false;
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ shell: sh.save(), progress, active })); } catch {} };
 const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-const ansi = s => esc(s).replace(/\x1b\[34m/g, '<span class="dir">').replace(/\x1b\[0m/g, '</span>');
+const ansi = s => esc(s).replace(/\x1b\[34m/g, '<span class="dir">').replace(/\x1b\[32m/g, '<span class="exe">').replace(/\x1b\[0m/g, '</span>');
+const showScreen = screen => { const html = screen.map(c => c.err ? `<span class="err">${ansi(c.text)}</span>` : ansi(c.text)).join('').replace(/\n(<\/span>)?$/, '$1'); if (html) print(html); };
 const promptHtml = () => buffer !== null ? '&gt; ' : `<span class="p-user">student@cloudshell</span>:<span class="p-path">${esc(sh.short())}</span>$ `;
 const print = (html, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html; out.append(d); };
 
@@ -132,14 +136,8 @@ function renderTree() {
 async function checkStep() {
   const L = LESSONS[active], i = progress[L.id] || 0, step = L.steps[i];
   if (!step || !sh.last) return;
-  const c = {
-    cmd: sh.last.cmd.replace(/\s+/g, ' '), out: sh.last.stdout, cwd: sh.short(), prevCwd: sh.short(sh.last.prevCwd),
-    file: p => { const n = sh.node(p); return n?.type === 'file' ? n.content : null; },
-    isDir: p => sh.node(p)?.type === 'dir',
-    run: async line => { const cwd = sh.cwd; const r = await sh.run(line, { record: false }); sh.cwd = cwd; return r.stdout; },
-  };
   let ok = false;
-  try { ok = await step.check(c); } catch {}
+  try { ok = await step.check(sh.ctx()); } catch {}
   if (ok) { progress[L.id] = i + 1; renderLesson(i); }
 }
 
@@ -149,13 +147,14 @@ async function submit() {
   print(promptHtml() + esc(line));
   const full = buffer !== null ? buffer + '\n' + line : line;
   busy = true;
-  const r = await sh.run(full);
+  let r;
+  try { r = await sh.run(full); } catch (e) { r = { screen: [{ text: `simulator error: ${e.message || e}\n`, err: true }] }; console.error(e); }
   busy = false;
   if (r.open) { buffer = full; renderPrompt(); return; }
   buffer = null;
   histPos = sh.hist.length;
   if (r.clear) out.innerHTML = '';
-  if (r.out) print(ansi(r.out.replace(/\n$/, '')), r.stdout ? '' : 'err');
+  showScreen(r.screen);
   if (r.nano) return openNano(r.nano);
   await checkStep();
   renderTree(); renderPrompt(); save();
@@ -164,7 +163,7 @@ async function submit() {
 function complete() {
   const v = cmd.value, word = v.match(/\S*$/)[0], before = v.slice(0, v.length - word.length);
   let cands = [];
-  if (!before.trim() || /[|;&]\s*$/.test(before)) cands = Object.keys(sh.cmds).filter(c => c.startsWith(word)).map(c => c + ' ');
+  if ((!before.trim() || /[|;&]\s*$/.test(before)) && !word.includes('/')) cands = Object.keys(sh.cmds).filter(c => /^\w/.test(c) && c.startsWith(word)).map(c => c + ' ');
   else {
     const k = word.lastIndexOf('/'), dir = word.slice(0, k + 1), base = word.slice(k + 1), node = sh.node(dir || '.');
     if (node?.type === 'dir') cands = Object.keys(node.children).filter(x => x.startsWith(base) && (base[0] === '.' || x[0] !== '.')).sort().map(x => dir + x + (node.children[x].type === 'dir' ? '/' : ' '));
@@ -226,7 +225,8 @@ $('nano-text').addEventListener('keydown', e => {
     return;
   }
   if (nano.mode === 'name') { e.preventDefault(); if (k === 'enter') { nanoSave(); nanoClose(); } else if (e.ctrlKey && k === 'c') { nano.mode = null; $('nano-ask').textContent = '[ Cancelled ]'; } return; }
-  if (e.ctrlKey && k === 'o') { e.preventDefault(); nanoSave(); }
+  if (k === 'tab') { e.preventDefault(); document.execCommand('insertText', false, '  '); }
+  else if (e.ctrlKey && k === 'o') { e.preventDefault(); nanoSave(); }
   else if (e.ctrlKey && k === 'x') {
     e.preventDefault();
     if (!nano.dirty) return nanoClose();
@@ -238,6 +238,8 @@ $('nano-text').addEventListener('keydown', e => {
 $('lesson').onchange = e => { active = +e.target.value; save(); renderLesson(); };
 $('steps').addEventListener('click', e => {
   if (e.target.dataset.hint) { e.target.parentElement.textContent = '💡 ' + e.target.dataset.hint; return; }
+  const pre = e.target.closest('pre');
+  if (pre) { navigator.clipboard?.writeText(pre.textContent).then(() => { pre.classList.add('copied'); setTimeout(() => pre.classList.remove('copied'), 1500); }); return; }
   if (e.target.tagName === 'CODE') { cmd.value = e.target.textContent; cmd.focus(); }
 });
 $('reset').onclick = () => {
