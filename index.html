@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bash Practice</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #667085; --line: #e3e6eb;
+    --accent: #2f6fde; --ok: #1a8f4e; --cur: #eef4ff;
+    --term-bg: #12151c; --term-text: #d7dce5; --term-prompt: #7ee787; --term-path: #79b8ff; --term-err: #ff9b9b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0d1016; --panel: #161a22; --text: #e2e6ee; --muted: #8b94a5; --line: #262c38; --accent: #6ea2ff; --ok: #4cc38a; --cur: #1b2436; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  header small { color: var(--muted); font-weight: normal; }
+  button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  main { flex: 1; display: grid; grid-template-columns: 360px 1fr 230px; min-height: 0; }
+  aside, #explorer { background: var(--panel); overflow-y: auto; padding: 14px 16px; }
+  aside { border-right: 1px solid var(--line); }
+  #explorer { border-left: 1px solid var(--line); font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+  select { width: 100%; font: inherit; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .intro { color: var(--muted); font-size: 14px; margin: 10px 0 14px; }
+  ol { padding: 0; margin: 0; list-style: none; counter-reset: s; }
+  li.step { counter-increment: s; padding: 8px 10px 8px 34px; border-radius: 8px; position: relative; margin-bottom: 4px; font-size: 14px; opacity: .55; }
+  li.step::before { content: counter(s); position: absolute; left: 8px; top: 8px; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--muted); font-size: 11px; text-align: center; line-height: 17px; }
+  li.step.done { opacity: .75; }
+  li.step.done::before { content: "✓"; background: var(--ok); border-color: var(--ok); color: #fff; }
+  li.step.cur { opacity: 1; background: var(--cur); outline: 1px solid var(--accent); }
+  li.step.cur::before { border-color: var(--accent); color: var(--accent); }
+  li.step.flash { animation: flash .6s; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--ok) 30%, transparent); } }
+  code { font: 13px ui-monospace, Menlo, Consolas, monospace; background: color-mix(in srgb, var(--accent) 12%, transparent); padding: 1px 4px; border-radius: 4px; word-break: break-word; }
+  li.step code { cursor: pointer; }
+  li.step code:hover { outline: 1px solid var(--accent); }
+  .hint { font-size: 13px; color: var(--muted); }
+  .hint button { font-size: 12px; padding: 1px 6px; }
+  .done-box { margin-top: 12px; padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 15%, transparent); }
+  #term { background: var(--term-bg); color: var(--term-text); font: 14px/1.45 ui-monospace, Menlo, Consolas, monospace; padding: 12px 14px; overflow-y: auto; cursor: text; min-width: 0; }
+  #out { white-space: pre-wrap; word-break: break-word; }
+  .p-user { color: var(--term-prompt); } .p-path { color: var(--term-path); } .err { color: var(--term-err); } .dir { color: var(--term-path); font-weight: bold; }
+  #line { display: flex; white-space: pre; }
+  #cmd { flex: 1; background: transparent; border: 0; outline: 0; color: inherit; font: inherit; padding: 0; caret-color: var(--term-prompt); }
+  #explorer h2 { font: 600 12px system-ui, sans-serif; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 8px; }
+  #explorer ul { list-style: none; margin: 0; padding-left: 14px; }
+  #explorer > ul { padding-left: 0; }
+  #explorer .here > span { background: var(--cur); outline: 1px solid var(--accent); border-radius: 4px; padding: 0 3px; }
+  #explorer .f { color: var(--muted); }
+  #nano { position: fixed; inset: 0; background: var(--term-bg); color: var(--term-text); display: none; flex-direction: column; font: 14px ui-monospace, Menlo, Consolas, monospace; z-index: 10; }
+  #nano .bar { background: var(--term-text); color: var(--term-bg); padding: 2px 8px; text-align: center; }
+  #nano textarea { flex: 1; background: transparent; color: inherit; border: 0; outline: 0; font: inherit; padding: 8px; resize: none; }
+  #nano .keys { padding: 4px 8px; white-space: pre; }
+  #nano .keys b { background: var(--term-text); color: var(--term-bg); font-weight: normal; padding: 0 2px; }
+  #nano .ask { background: var(--term-text); color: var(--term-bg); padding: 2px 8px; min-height: 1.5em; }
+  @media (max-width: 900px) {
+    body { height: auto; }
+    main { grid-template-columns: 1fr; }
+    #term { height: 60vh; order: -1; }
+    aside, #explorer { border: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bash Practice <small>· Technical Data Analysis</small></h1>
+  <button id="reset">Start over</button>
+</header>
+<main>
+  <aside>
+    <select id="lesson"></select>
+    <p class="intro" id="intro"></p>
+    <ol id="steps"></ol>
+    <div id="donebox"></div>
+  </aside>
+  <section id="term"><div id="out"></div><div id="line"><span id="prompt"></span><input id="cmd" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="command"></div></section>
+  <div id="explorer"><h2>Explorer</h2><div id="tree"></div></div>
+</main>
+<div id="nano">
+  <div class="bar" id="nano-title"></div>
+  <textarea id="nano-text" spellcheck="false"></textarea>
+  <div class="ask" id="nano-ask"></div>
+  <div class="keys"><b>^O</b> Write Out   <b>^X</b> Exit</div>
+</div>
+<script src="shell.js"></script>
+<script src="lessons.js"></script>
+<script>
+const KEY = 'bash-practice-v1';
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
+const sh = new Shell(saved.shell);
+const progress = saved.progress || {};
+let active = Math.min(saved.active || 0, LESSONS.length - 1);
+const $ = id => document.getElementById(id);
+const out = $('out'), cmd = $('cmd'), term = $('term');
+let buffer = null, histPos = sh.hist.length, busy = false;
+
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ shell: sh.save(), progress, active })); } catch {} };
+const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const ansi = s => esc(s).replace(/\x1b\[34m/g, '<span class="dir">').replace(/\x1b\[0m/g, '</span>');
+const promptHtml = () => buffer !== null ? '&gt; ' : `<span class="p-user">student@cloudshell</span>:<span class="p-path">${esc(sh.short())}</span>$ `;
+const print = (html, cls) => { const d = document.createElement('div'); if (cls) d.className = cls; d.innerHTML = html; out.append(d); };
+
+function renderPrompt() { $('prompt').innerHTML = promptHtml(); term.scrollTop = term.scrollHeight; }
+
+function renderLesson(flashIdx) {
+  const L = LESSONS[active], done = progress[L.id] || 0;
+  $('lesson').innerHTML = LESSONS.map((l, i) => `<option value="${i}" ${i === active ? 'selected' : ''}>${l.title} (${Math.min(progress[l.id] || 0, l.steps.length)}/${l.steps.length})</option>`).join('');
+  $('intro').innerHTML = L.intro;
+  $('steps').innerHTML = L.steps.map((s, i) => `<li class="step ${i < done ? 'done' : i === done ? 'cur' : ''} ${i === flashIdx ? 'flash' : ''}">${s.do}${s.hint && i === done ? ` <span class="hint"><button data-hint="${esc(s.hint)}">hint</button></span>` : ''}</li>`).join('');
+  const next = LESSONS[active + 1];
+  $('donebox').innerHTML = done >= L.steps.length ? `<div class="done-box">Lesson complete! ${next ? `<button id="next">Next: ${next.title} →</button>` : 'That is everything for now.'}</div>` : '';
+  if (next && done >= L.steps.length) $('next').onclick = () => { active++; save(); renderLesson(); };
+  $('steps').querySelector('.cur')?.scrollIntoView({ block: 'nearest' });
+}
+
+function renderTree() {
+  const here = sh.cwd;
+  const walk = (node, path) => '<ul>' + Object.keys(node.children).filter(n => n[0] !== '.').sort().map(name => {
+    const c = node.children[name], p = path + '/' + name;
+    return c.type === 'dir'
+      ? `<li class="${p === here ? 'here' : ''}"><span>📁 ${esc(name)}</span>${walk(c, p)}</li>`
+      : `<li class="f">📄 ${esc(name)}</li>`;
+  }).join('') + '</ul>';
+  $('tree').innerHTML = `<ul><li class="${here === HOME ? 'here' : ''}"><span>🏠 ~ (${HOME})</span>${walk(sh.node(HOME), HOME)}</li></ul>` + (here.startsWith(HOME) ? '' : `<p>You are outside home: <b>${esc(here)}</b></p>`);
+}
+
+async function checkStep() {
+  const L = LESSONS[active], i = progress[L.id] || 0, step = L.steps[i];
+  if (!step || !sh.last) return;
+  const c = {
+    cmd: sh.last.cmd.replace(/\s+/g, ' '), out: sh.last.stdout, cwd: sh.short(), prevCwd: sh.short(sh.last.prevCwd),
+    file: p => { const n = sh.node(p); return n?.type === 'file' ? n.content : null; },
+    isDir: p => sh.node(p)?.type === 'dir',
+    run: async line => { const cwd = sh.cwd; const r = await sh.run(line, { record: false }); sh.cwd = cwd; return r.stdout; },
+  };
+  let ok = false;
+  try { ok = await step.check(c); } catch {}
+  if (ok) { progress[L.id] = i + 1; renderLesson(i); }
+}
+
+async function submit() {
+  const line = cmd.value;
+  cmd.value = '';
+  print(promptHtml() + esc(line));
+  const full = buffer !== null ? buffer + '\n' + line : line;
+  busy = true;
+  const r = await sh.run(full);
+  busy = false;
+  if (r.open) { buffer = full; renderPrompt(); return; }
+  buffer = null;
+  histPos = sh.hist.length;
+  if (r.clear) out.innerHTML = '';
+  if (r.out) print(ansi(r.out.replace(/\n$/, '')), r.stdout ? '' : 'err');
+  if (r.nano) return openNano(r.nano);
+  await checkStep();
+  renderTree(); renderPrompt(); save();
+}
+
+function complete() {
+  const v = cmd.value, word = v.match(/\S*$/)[0], before = v.slice(0, v.length - word.length);
+  let cands = [];
+  if (!before.trim() || /[|;&]\s*$/.test(before)) cands = Object.keys(sh.cmds).filter(c => c.startsWith(word)).map(c => c + ' ');
+  else {
+    const k = word.lastIndexOf('/'), dir = word.slice(0, k + 1), base = word.slice(k + 1), node = sh.node(dir || '.');
+    if (node?.type === 'dir') cands = Object.keys(node.children).filter(x => x.startsWith(base) && (base[0] === '.' || x[0] !== '.')).sort().map(x => dir + x + (node.children[x].type === 'dir' ? '/' : ' '));
+  }
+  if (cands.length === 1) cmd.value = before + cands[0];
+  else if (cands.length > 1) {
+    let pre = cands[0];
+    for (const c of cands) while (!c.startsWith(pre)) pre = pre.slice(0, -1);
+    if (pre.length > word.length) cmd.value = before + pre;
+    else { print(promptHtml() + esc(v)); print(esc(cands.map(c => c.trim().split('/').filter(Boolean).pop() + (c.endsWith('/') ? '/' : '')).join('  '))); renderPrompt(); }
+  }
+}
+
+cmd.addEventListener('keydown', e => {
+  if (busy) { e.preventDefault(); return; }
+  if (e.key === 'Enter') { e.preventDefault(); submit(); }
+  else if (e.key === 'Tab') { e.preventDefault(); complete(); }
+  else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    histPos = Math.max(0, Math.min(sh.hist.length, histPos + (e.key === 'ArrowUp' ? -1 : 1)));
+    cmd.value = sh.hist[histPos] ?? '';
+    setTimeout(() => cmd.setSelectionRange(cmd.value.length, cmd.value.length));
+  } else if (e.ctrlKey && e.key === 'c') { e.preventDefault(); print(promptHtml() + esc(cmd.value) + '^C'); cmd.value = ''; buffer = null; renderPrompt(); }
+  else if (e.ctrlKey && e.key === 'l') { e.preventDefault(); out.innerHTML = ''; }
+});
+term.addEventListener('click', () => { if (!getSelection().toString()) cmd.focus(); });
+
+// nano: Ctrl+O saves, Ctrl+X exits (asks Y/N, then Enter for the file name), like the real one.
+const nano = { path: null, dirty: false, mode: null };
+function openNano(path) {
+  nano.path = path; nano.dirty = false; nano.mode = null;
+  $('nano-title').textContent = `GNU nano    ${sh.short(path)}`;
+  $('nano-text').value = sh.node(path)?.content ?? '';
+  $('nano-ask').textContent = sh.node(path) ? '' : '[ New File ]';
+  $('nano').style.display = 'flex';
+  $('nano-text').focus();
+}
+function nanoSave() {
+  let t = $('nano-text').value;
+  if (t && !t.endsWith('\n')) t += '\n';
+  sh.write(nano.path, t, false);
+  nano.dirty = false;
+  $('nano-ask').textContent = `[ Wrote ${t ? t.split('\n').length - 1 : 0} lines ]`;
+}
+async function nanoClose() {
+  $('nano').style.display = 'none';
+  cmd.focus();
+  await checkStep();
+  renderTree(); renderPrompt(); save();
+}
+$('nano-text').addEventListener('input', () => { nano.dirty = true; });
+$('nano-text').addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (nano.mode === 'ask') {
+    e.preventDefault();
+    if (k === 'y') { nano.mode = 'name'; $('nano-ask').textContent = `File Name to Write: ${sh.short(nano.path)}   (press Enter)`; }
+    else if (k === 'n') nanoClose();
+    else if (e.ctrlKey && k === 'c') { nano.mode = null; $('nano-ask').textContent = '[ Cancelled ]'; }
+    return;
+  }
+  if (nano.mode === 'name') { e.preventDefault(); if (k === 'enter') { nanoSave(); nanoClose(); } else if (e.ctrlKey && k === 'c') { nano.mode = null; $('nano-ask').textContent = '[ Cancelled ]'; } return; }
+  if (e.ctrlKey && k === 'o') { e.preventDefault(); nanoSave(); }
+  else if (e.ctrlKey && k === 'x') {
+    e.preventDefault();
+    if (!nano.dirty) return nanoClose();
+    nano.mode = 'ask';
+    $('nano-ask').textContent = 'Save modified buffer?   Y Yes   N No   ^C Cancel';
+  }
+});
+
+$('lesson').onchange = e => { active = +e.target.value; save(); renderLesson(); };
+$('steps').addEventListener('click', e => {
+  if (e.target.dataset.hint) { e.target.parentElement.textContent = '💡 ' + e.target.dataset.hint; return; }
+  if (e.target.tagName === 'CODE') { cmd.value = e.target.textContent; cmd.focus(); }
+});
+$('reset').onclick = () => {
+  if (!confirm('Delete all your files and progress and start from scratch?')) return;
+  try { localStorage.removeItem(KEY); } catch {}
+  location.reload();
+};
+
+print('Practice terminal: a simulated bash that runs in your browser. Nothing here touches your computer.\nType <b>help</b> to list commands, or follow the steps on the left. Your files are saved in this browser.');
+renderLesson(); renderTree(); renderPrompt();
+cmd.focus();
+</script>
+</body>
+</html>

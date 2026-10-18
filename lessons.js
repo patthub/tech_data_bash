@@ -1,0 +1,120 @@
+// Lessons: each step has `do` (HTML shown to the student) and `check(c)`, run after every command.
+// c = { cmd, out, cwd, prevCwd, file(path) -> content|null, isDir(path), run(line) -> stdout (silent) }
+// Add a new class by appending an object to LESSONS. Code in <code> is clickable (inserts into the prompt).
+const D = '~/course/data', R = D + '/rates.csv';
+const n = s => (s ?? '').split('\n').filter(Boolean).length;
+const is = re => c => re.test(c.cmd);
+
+const LESSONS = [
+  {
+    id: 'start', title: '1. First commands',
+    intro: 'The line ending in <b>$</b> is the <b>prompt</b>. Type after it and press <b>Enter</b>. Shortcuts that save hours: <b>↑</b> brings back the previous command, <b>Tab</b> completes names, <b>Ctrl+C</b> cancels.',
+    steps: [
+      { do: 'Say hello: <code>echo "Hello!"</code>', check: is(/^echo\b/) },
+      { do: 'Who am I? <code>whoami</code>', check: is(/^whoami$/) },
+      { do: 'What time is it? <code>date</code>', check: is(/^date$/) },
+      { do: 'Press <b>↑</b> twice to bring back <code>whoami</code> and run it again.', check: is(/^whoami$/) },
+      { do: 'Clean the screen: <code>clear</code>', check: is(/^clear$/) },
+      { do: 'Checkpoint: <code>echo "I am ready"</code>', check: c => c.out.trim() === 'I am ready' },
+    ],
+  },
+  {
+    id: 'move', title: '2. Where am I? Moving around',
+    intro: 'A path is an address. <code>..</code> is the folder above, <code>~</code> is home, a path starting with <code>/</code> counts from the very top. Watch the <b>Explorer</b> panel: the folder you are in is highlighted.',
+    steps: [
+      { do: 'Create some folders to walk around in (you will understand this line in 20 minutes):<br><code>mkdir -p course/data course/notes course/results</code>', check: c => ['data', 'notes', 'results'].every(d => c.isDir('~/course/' + d)) },
+      { do: 'Where am I? <code>pwd</code>', check: is(/^pwd$/) },
+      { do: 'What is here? <code>ls</code>', check: is(/^ls$/) },
+      { do: 'Go into the course folder: <code>cd course</code>', check: c => c.cwd === '~/course' },
+      { do: 'Go deeper: <code>cd data</code>, then check with <code>pwd</code>', check: c => c.cwd === '~/course/data' && c.cmd === 'pwd' },
+      { do: 'One level up: <code>cd ..</code>', check: c => c.cwd === '~/course' && /^cd \.\.\/?$/.test(c.cmd) },
+      { do: 'Back home: <code>cd ~</code>', check: c => c.cwd === '~' },
+      { do: 'The very top of the file system: <code>cd /</code> and look around with <code>ls</code>', check: c => c.cwd === '/' && c.cmd === 'ls' },
+      { do: 'Plain <code>cd</code> also takes you home.', check: c => c.cwd === '~' && c.cmd === 'cd' },
+      { do: 'Same files, more details: <code>ls -l</code>. Flags change how a command behaves.', check: is(/^ls -l\b/) },
+      { do: '<b>Exercise.</b> From home, go into <b>course/data</b> with <i>one</i> command.', hint: 'Paths can have several parts separated by /', check: c => c.prevCwd === '~' && c.cwd === '~/course/data' },
+      { do: '<b>Exercise.</b> From data, go to <b>course/results</b> with one command.', hint: '.. means the folder above', check: c => c.prevCwd === '~/course/data' && c.cwd === '~/course/results' },
+      { do: '<b>Exercise.</b> Go back home and confirm with <code>pwd</code>.', check: c => c.cwd === '~' && c.cmd === 'pwd' },
+      { do: '<b>Bonus.</b> From anywhere, jump to <b>course/notes</b> with an absolute path (starting with <code>~/</code>).', check: c => c.cwd === '~/course/notes' && /~\/|\/home/.test(c.cmd) },
+      { do: '<b>Bonus.</b> Show hidden files in your home folder: <code>ls -la ~</code>. Files starting with a dot are hidden.', check: is(/^ls -(la|al|a)\b/) },
+    ],
+  },
+  {
+    id: 'files', title: '3. Creating and organising files',
+    intro: '<b>&gt;</b> writes to a file and <b>overwrites</b> it. <b>&gt;&gt;</b> appends at the end. <b>rm</b> has no recycle bin. Use <code>_</code> instead of spaces in file names.',
+    steps: [
+      { do: '<code>cd ~/course/notes</code>', check: c => c.cwd === '~/course/notes' },
+      { do: 'An empty file: <code>touch empty.txt</code>', check: c => c.file('~/course/notes/empty.txt') !== null },
+      { do: 'A file with content: <code>echo "First line" > note.txt</code>', check: c => c.file('~/course/notes/note.txt') === 'First line\n' },
+      { do: 'Show it: <code>cat note.txt</code>', check: is(/^cat note\.txt$/) },
+      { do: 'Append: <code>echo "Second line" >> note.txt</code>, then <code>cat note.txt</code>', check: c => n(c.file('~/course/notes/note.txt')) === 2 && /^cat/.test(c.cmd) },
+      { do: 'Now a single &gt;: <code>echo "Oops" > note.txt</code>, then <code>cat note.txt</code>. Where did the two lines go?', check: c => c.file('~/course/notes/note.txt') === 'Oops\n' && /^cat/.test(c.cmd) },
+      { do: 'Edit in the terminal: <code>nano note.txt</code>. Add a line, then <b>Ctrl+X</b>, <b>Y</b>, <b>Enter</b> to save and exit.', check: c => n(c.file('~/course/notes/note.txt')) >= 2 },
+      { do: 'Copy: <code>cp note.txt copy.txt</code>', check: c => c.file('~/course/notes/copy.txt') !== null },
+      { do: 'Move to another folder: <code>mv copy.txt ../results/</code>', check: c => c.file('~/course/results/copy.txt') !== null && c.file('~/course/notes/copy.txt') === null },
+      { do: 'mv also renames: <code>mv empty.txt new_name.txt</code>', check: c => c.file('~/course/notes/new_name.txt') !== null && c.file('~/course/notes/empty.txt') === null },
+      { do: 'Delete for good: <code>rm new_name.txt</code>', check: c => c.file('~/course/notes/new_name.txt') === null },
+      { do: '<b>Exercise.</b> In course/notes create <b>about_me.txt</b> with three lines: your name, your programme, your favourite food. Use echo with &gt; and &gt;&gt;.', check: c => n(c.file('~/course/notes/about_me.txt')) === 3 },
+      { do: '<b>Exercise.</b> Copy it to course/results.', check: c => c.file('~/course/results/about_me.txt') !== null },
+      { do: '<b>Exercise.</b> Rename the copy to <b>card.txt</b>. Check the Explorer panel.', check: c => n(c.file('~/course/results/card.txt')) === 3 && c.file('~/course/results/about_me.txt') === null },
+      { do: '<b>Bonus.</b> Create three files with one command: <code>touch a.txt b.txt c.txt</code>', check: c => ['a', 'b', 'c'].every(x => c.file(c.cwd + `/${x}.txt`) !== null) },
+      { do: '<b>Bonus.</b> Delete all three with one command.', check: c => /^rm /.test(c.cmd) && ['a', 'b', 'c'].every(x => c.file(c.cwd + `/${x}.txt`) === null) },
+    ],
+  },
+  {
+    id: 'data', title: '4. First real data',
+    intro: 'Exchange rates from the Polish National Bank (NBP). Names are in Polish: <i>dolar</i> = dollar, <i>korona</i> = krona/koruna, <i>frank</i> = franc, <i>funt</i> = pound. We will take the download command apart in a few weeks; today we just use it.',
+    steps: [
+      { do: 'Go to the data folder and download today\'s rates (click each line, then Enter):<br><code>cd ~/course/data</code><br><code>curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r \'.[0].rates[] | "\\(.code),\\(.mid),\\(.currency)"\' > rates.csv</code>', check: c => n(c.file(R)) > 10 },
+      { do: 'The whole file: <code>cat rates.csv</code>', check: is(/^cat rates\.csv$/) },
+      { do: 'The first 5 rows: <code>head -5 rates.csv</code>', check: is(/^head (-5|-n ?5) rates\.csv$/) },
+      { do: 'How many rows? <code>wc -l rates.csv</code>', check: is(/^wc -l rates\.csv$/) },
+      { do: 'The euro rate: <code>grep EUR rates.csv</code>', check: is(/^grep EUR rates\.csv$/) },
+      { do: 'All the dollars: <code>grep dolar rates.csv</code>', check: is(/^grep dolar rates\.csv$/) },
+      { do: 'How many francs? <code>grep -c frank rates.csv</code>', check: is(/^grep -c frank rates\.csv$/) },
+      { do: 'A preview of pipes, the three most expensive currencies:<br><code>sort -t, -k2 -n rates.csv | tail -3</code>', check: async c => c.out === await c.run(`sort -t, -k2 -n ${R} | tail -3`) },
+      { do: '<b>Exercise.</b> How much is the British pound (GBP)?', check: c => /^GBP,/.test(c.out) && n(c.out) === 1 },
+      { do: '<b>Exercise.</b> How many currencies have the word <i>korona</i> in their name?', check: async c => c.out.trim().split(/\s/)[0] === (await c.run(`grep -c korona ${R}`)).trim() },
+      { do: '<b>Exercise.</b> Which three currencies are the cheapest?', hint: 'swap tail for head', check: async c => c.out === await c.run(`sort -t, -k2 -n ${R} | head -3`) },
+    ],
+  },
+  {
+    id: 'pipes', title: '5. Combining commands: pipes',
+    intro: 'The <b>|</b> symbol is a conveyor belt: the output of one command goes straight into the next. Build pipelines step by step: run the first part, look at the output, only then add <b>|</b> and the next command.',
+    steps: [
+      { do: 'Make sure you are in the data folder: <code>cd ~/course/data</code>', check: c => c.cwd === D },
+      { do: 'Codes only (column 1, separator: comma): <code>cut -d, -f1 rates.csv</code>', check: async c => c.out === await c.run(`cut -d, -f1 ${R}`) },
+      { do: 'Names only: <code>cut -d, -f3 rates.csv</code>', check: async c => c.out === await c.run(`cut -d, -f3 ${R}`) },
+      { do: 'Your first pipeline, five codes: <code>cut -d, -f1 rates.csv | head -5</code>', check: async c => c.out === await c.run(`cut -d, -f1 ${R} | head -5`) },
+      { do: 'Names in alphabetical order: <code>cut -d, -f3 rates.csv | sort</code>', check: async c => c.out === await c.run(`cut -d, -f3 ${R} | sort`) },
+      { do: 'Count the kronas another way than grep -c: <code>grep korona rates.csv | wc -l</code>', check: is(/^grep korona rates\.csv \| wc -l$/) },
+      { do: 'The three most expensive (r = reverse): <code>sort -t, -k2 -nr rates.csv | head -3</code>', check: async c => c.out === await c.run(`sort -t, -k2 -nr ${R} | head -3`) },
+      { do: 'The classic trap: sort <i>without</i> <code>-n</code>, i.e. as text. <code>sort -t, -k2 rates.csv | head -5</code>. Are these really the cheapest?', check: c => /^sort -t, ?-k ?2 rates\.csv/.test(c.cmd) },
+      { do: 'Build it in steps. Question: how many currencies of each kind? First word of each name:<br><code>cut -d, -f3 rates.csv | cut -d\' \' -f1</code>', check: async c => c.out === await c.run(`cut -d, -f3 ${R} | cut -d' ' -f1`) },
+      { do: 'Press <b>↑</b> and add <code>| sort</code> at the end.', check: async c => c.out === await c.run(`cut -d, -f3 ${R} | cut -d' ' -f1 | sort`) },
+      { do: 'Press <b>↑</b> again and add <code>| uniq -c</code>', check: async c => c.out === await c.run(`cut -d, -f3 ${R} | cut -d' ' -f1 | sort | uniq -c`) },
+      { do: 'Save a pipeline\'s output to a file: <code>sort -t, -k2 -nr rates.csv | head -5 > top5.csv</code>', check: c => n(c.file(D + '/top5.csv')) === 5 },
+      { do: 'Help yourself: <code>sort --help</code>. Find the option that reverses the order.', check: is(/^sort --help/) },
+      { do: 'Everything you typed today: <code>history</code>', check: is(/^history/) },
+      { do: '<b>Data detective 1.</b> Print only the rates (column 2), sorted from smallest to largest.', check: async c => c.out === await c.run(`cut -d, -f2 ${R} | sort -n`) },
+      { do: '<b>Data detective 2.</b> Save the row of the most expensive currency to <b>most_expensive.txt</b> (in the data folder).', check: async c => c.file(D + '/most_expensive.txt') === await c.run(`sort -t, -k2 -nr ${R} | head -1`) },
+      { do: '<b>Data detective 3.</b> How many different kinds of currency are there?', hint: 'the uniq pipeline plus wc -l', check: async c => c.out.trim() === (await c.run(`cut -d, -f3 ${R} | cut -d' ' -f1 | sort | uniq | wc -l`)).trim() },
+    ],
+  },
+  {
+    id: 'hw1', title: 'Homework 1 (practice run)',
+    intro: 'Practise here, then do it for real in Cloud Shell and send a screenshot of <code>ls -l ~/course/homework1</code>.',
+    steps: [
+      { do: 'In ~/course create a folder called <b>homework1</b>.', check: c => c.isDir('~/course/homework1') },
+      { do: 'Copy <b>~/course/data/rates.csv</b> into it.', check: c => c.file('~/course/homework1/rates.csv') !== null },
+      { do: 'Using grep and &gt;, save all the kronas to <b>kronas.csv</b> (in homework1).', check: async c => { const k = c.file('~/course/homework1/kronas.csv'); return !!k && k === await c.run(`grep korona ${R}`); } },
+      { do: 'And all the dollars to <b>dollars.csv</b>.', check: async c => { const k = c.file('~/course/homework1/dollars.csv'); return !!k && k === await c.run(`grep dolar ${R}`); } },
+      { do: 'Create <b>answers.txt</b> and append (&gt;&gt;) three lines: how many kronas, how many dollars, the euro rate.', check: c => n(c.file('~/course/homework1/answers.txt')) === 3 },
+      { do: 'Using a pipeline, save the five cheapest currencies to <b>cheapest5.csv</b>.', check: async c => c.file('~/course/homework1/cheapest5.csv') === await c.run(`sort -t, -k2 -n ${R} | head -5`) },
+      { do: 'Run <code>ls -l ~/course/homework1</code>', check: c => /^ls -l/.test(c.cmd) && c.out.includes('cheapest5.csv') },
+      { do: '<b>Bonus.</b> Print only the currency codes, sorted alphabetically, with no duplicates.', hint: 'cut --help, sort --help', check: async c => c.out === await c.run(`cut -d, -f1 ${R} | sort -u`) },
+    ],
+  },
+];
+
+if (typeof module !== 'undefined') module.exports = { LESSONS };
