@@ -148,7 +148,7 @@ async function submit() {
   const full = buffer !== null ? buffer + '\n' + line : line;
   busy = true;
   let r;
-  try { r = await sh.run(full); } catch (e) { r = { screen: [{ text: `simulator error: ${e.message || e}\n`, err: true }] }; console.error(e); }
+  try { r = await sh.run(full); } catch (e) { r = { screen: [{ text: `bash: internal error: ${e.message || e}\n`, err: true }] }; console.error(e); }
   busy = false;
   if (r.open) { buffer = full; renderPrompt(); return; }
   buffer = null;
@@ -248,7 +248,6 @@ $('reset').onclick = () => {
   location.reload();
 };
 
-print('Practice terminal: a simulated bash that runs in your browser. Nothing here touches your computer.\nType <b>help</b> to list commands, or follow the steps on the left. Your files are saved in this browser.');
 renderLesson(); renderTree(); renderPrompt();
 cmd.focus();
 </script>

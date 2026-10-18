@@ -28,7 +28,7 @@ const HELP = {
   nano: 'Usage: nano FILE\nA simple text editor. Ctrl+O saves, Ctrl+X exits.',
   less: 'Usage: less FILE\nShow a file one screen at a time (here: the whole file). In real less press q to quit.',
   curl: 'Usage: curl [OPTION]... URL\nTransfer data from a URL.\n  -s   silent mode\n  -o FILE  write output to FILE instead of stdout',
-  jq: 'Usage: jq [-r] FILTER\nCommand-line JSON processor (simulator supports paths like .[0].rates[] ,\n.field, length, and string templates like "\\(.code),\\(.mid)").\n  -r   output raw strings, not JSON texts',
+  jq: 'Usage: jq [-r] FILTER\nCommand-line JSON processor. Supported: .[0].rates[]  .field  length  "\\(.code),\\(.mid)"\n  -r   output raw strings, not JSON texts',
   clear: 'Usage: clear\nClear the terminal screen.',
   whoami: 'Usage: whoami\nPrint the user name.',
   date: 'Usage: date [+FORMAT]\nDisplay the current time, optionally in FORMAT.\n  %F   full date, like 2026-10-18\n  %Y %m %d   year, month, day\n  %H %M %S   hour, minute, second',
@@ -255,7 +255,7 @@ class Shell {
     if (syntax) this.err(`bash: syntax error near unexpected token \`${syntax}'\n`);
     else {
       try { await this.execList(ast, { stdin: '', capture: false }); }
-      catch (e) { if (e.exit === undefined) throw e; this.screen.push({ text: 'exit\n(This is a practice terminal, there is nowhere to exit to.)\n' }); }
+      catch (e) { if (e.exit === undefined) throw e; this.screen.push({ text: 'exit\n' }); }
     }
     const stdout = this.screen.filter(c => !c.err).map(c => c.text).join('').replace(/\x1b\[\d+m/g, '');
     if (record) this.last = { cmd: line.trim(), stdout, prevCwd };
@@ -424,13 +424,13 @@ Shell.prototype.cmds = {
     const [first, step, last] = args.length === 1 ? [1, 1, a] : args.length === 2 ? [a, 1, b] : [a, b, c];
     if ([first, step, last].some(Number.isNaN) || !step) return { err: 'seq: invalid argument\n' };
     // ponytail: the only command that can make huge output from nothing; the cap keeps the browser tab responsive.
-    if ((last - first) / step > 100000) return { err: 'seq: this practice terminal stops at 100000 numbers\n' };
+    if ((last - first) / step > 100000) return { err: 'seq: too many numbers (limit: 100000)\n' };
     const out = [];
     for (let x = first; step > 0 ? x <= last : x >= last; x += step) out.push(x);
     return { out: unlines(out) };
   },
   export(args) { for (const a of args) { const m = a.match(/^([A-Za-z_]\w*)=(.*)$/s); if (m) this.env[m[1]] = m[2]; } },
-  bash(args, stdin, tty, io) { return args[0] ? this.runScript(args[0], args.slice(1), io) : { err: 'bash: this simulator runs script files only: bash SCRIPT.sh\n' }; },
+  bash(args, stdin, tty, io) { return args[0] ? this.runScript(args[0], args.slice(1), io) : { err: 'usage: bash SCRIPT.sh [ARGUMENTS]\n' }; },
   sh(args, stdin, tty, io) { return this.cmds.bash.call(this, args, stdin, tty, io); },
   chmod(args) {
     const [mode, ...files] = args;
@@ -472,7 +472,7 @@ Shell.prototype.cmds = {
   history() { return { out: unlines(this.hist.map((h, i) => `${String(i + 1).padStart(5)}  ${h}`)) }; },
   exit(args) { throw { exit: args[0] !== undefined ? parseInt(args[0]) || 0 : this.code }; },
   man: args => ({ err: `man: no manual pages here. Try: ${args[0] || 'ls'} --help\n` }),
-  help() { return { out: 'Commands in this simulator:\n  ' + Object.keys(this.cmds).filter(c => /^\w/.test(c)).sort().join(' ') + '\nAdd --help to any command to see its options, e.g. sort --help\n' }; },
+  help() { return { out: 'Commands:\n  ' + Object.keys(this.cmds).filter(c => /^\w/.test(c)).sort().join(' ') + '\nOptions of a command: COMMAND --help\n' }; },
 
   cd(args) {
     if (args.length > 1) return { err: 'bash: cd: too many arguments\n' };
@@ -560,7 +560,7 @@ Shell.prototype.cmds = {
   less(args, stdin) { return this.cmds.cat.call(this, args, stdin); },
   more(args, stdin) { return this.cmds.cat.call(this, args, stdin); },
   nano(args) {
-    if (!args[0]) return { err: 'nano: this simulator needs a file name: nano FILE\n' };
+    if (!args[0]) return { err: 'usage: nano FILE\n' };
     const n = this.node(args[0]), { dir } = this.parent(args[0]);
     if (n?.type === 'dir') return { err: `nano: ${args[0]}: Is a directory\n` };
     if (!dir) return { err: `nano: ${args[0]}: No such file or directory\n` };
@@ -656,7 +656,7 @@ Shell.prototype.cmds = {
       const r = await fetch(url);
       out = await r.text();
     } catch (e) {
-      if (!url.includes('api.nbp.pl')) return { err: `curl: (6) Could not reach ${url} (the browser blocks most sites; api.nbp.pl works)\n`, code: 6 };
+      if (!url.includes('api.nbp.pl')) return { err: `curl: (7) Failed to connect to ${url}\n`, code: 6 };
       out = NBP_SAMPLE;
       err = '(offline: using saved NBP data from 2026-10-16)\n';
     }
@@ -724,7 +724,7 @@ function jqStage(s, v) {
 function jqPath(p, v) {
   if (p === '.') return [v];
   const toks = p.match(/\.[A-Za-z_]\w*|\.?\[\d*\]/g) || [];
-  if (toks.join('') !== p) throw new Error(`this simulator does not understand '${p}' (try paths like .[0].rates[] or .code)`);
+  if (toks.join('') !== p) throw new Error(`unsupported filter '${p}'`);
   let st = [v];
   for (const t of toks) {
     const b = t.replace(/^\./, '');
