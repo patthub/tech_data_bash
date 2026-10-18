@@ -423,6 +423,8 @@ Shell.prototype.cmds = {
     const [a, b, c] = args.map(Number);
     const [first, step, last] = args.length === 1 ? [1, 1, a] : args.length === 2 ? [a, 1, b] : [a, b, c];
     if ([first, step, last].some(Number.isNaN) || !step) return { err: 'seq: invalid argument\n' };
+    // ponytail: the only command that can make huge output from nothing; the cap keeps the browser tab responsive.
+    if ((last - first) / step > 100000) return { err: 'seq: this practice terminal stops at 100000 numbers\n' };
     const out = [];
     for (let x = first; step > 0 ? x <= last : x >= last; x += step) out.push(x);
     return { out: unlines(out) };
