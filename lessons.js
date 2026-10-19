@@ -171,63 +171,24 @@ sort -t, -k2 -nr rates.csv | head -3`, check: c => n(c.file(S + '/report.sh')) >
     ],
   },
   {
-    id: 'args', title: '2.3 Script arguments',
-    intro: 'Words you type after a script name are its <b>arguments</b>. Inside the script, <code>$1</code> is the first, <code>$2</code> the second, <code>$#</code> how many there are. One script, many questions.',
-    steps: [
-      { do: 'In ~/course/scripts create <b>rate.sh</b>:' + pre`
-#!/bin/bash
-# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
-grep "$1" ~/course/data/rates.csv`, check: c => (c.file(S + '/rate.sh') || '').includes('$1') },
-      { do: 'Make it executable: <code>chmod +x rate.sh</code>', check: c => c.isExec(S + '/rate.sh') },
-      { do: 'Ask about the dollar: <code>./rate.sh USD</code>', check: c => c.cmd === './rate.sh USD' && /^USD,/.test(c.out) },
-      { do: 'Same script, different questions: <code>./rate.sh CHF</code>, then <code>./rate.sh korona</code>', check: c => c.cmd === './rate.sh korona' && n(c.out) > 1 },
-      { do: 'What if you forget the argument? <code>./rate.sh</code>. <code>$1</code> is empty, and grep with an empty pattern matches every line. We fix that in lesson 2.5.', check: c => c.cmd === './rate.sh' && n(c.out) > 10 },
-      { do: 'Make the output friendlier. Open <code>nano rate.sh</code> and replace everything with:' + pre`
-#!/bin/bash
-# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
-rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
-echo "1 $1 = $rate PLN"` + 'then run <code>./rate.sh EUR</code>. (<code>^</code> means "at the start of the line", so EUR cannot match in the middle of a name.)', why: why(['$1', 'the first argument, e.g. EUR'], ['"^$1,"', 'the pattern becomes <code>^EUR,</code>: EUR at the very start of the line, followed by a comma'], ['| cut -d, -f2', 'keep only the rate'], ['rate=$( ... )', 'store it']), check: c => /^1 [A-Z]{3} = [\d.]+ PLN$/.test(c.out.trim()) },
-      { do: '<b>Exercise.</b> Write <b>top.sh</b> that prints the N most expensive currencies, where N is the first argument. Run <code>./top.sh 5</code>.', hint: 'sort -t, -k2 -nr ... | head -n "$1"', check: async c => { const m = c.cmd.match(/top\.sh (\d+)$/); return !!m && +m[1] > 0 && c.out === await c.run(`sort -t, -k2 -nr ${R} | head -${m[1]}`); } },
-    ],
-  },
-  {
-    id: 'loops', title: '2.4 Loops',
+    id: 'loops', title: '2.3 Loops',
     intro: 'A <b>for</b> loop repeats commands for each item in a list: <code>for x in a b c; do ...; done</code>. You can also type a loop over several lines: after <code>do</code> press Enter and bash shows <code>&gt;</code> until you type <code>done</code>.',
     steps: [
       { do: '<code>cd ~/course/data</code>, then your first loop:<br><code>for code in USD EUR GBP; do echo "Currency: $code"; done</code>', check: c => c.out === 'Currency: USD\nCurrency: EUR\nCurrency: GBP\n' },
       { do: 'Do something useful in the loop: <code>for code in USD EUR GBP; do grep "^$code," rates.csv; done</code>', check: async c => /^for /.test(c.cmd) && c.out === await c.run(`for x in USD EUR GBP; do grep "^$x," ${R}; done`) },
       { do: 'The list can come from a command: <code>for code in $(cut -d, -f1 rates.csv | head -5); do echo "Code: $code"; done</code>', why: why(['for code in ...', 'repeat for every word in the list, putting it in $code'], ['$(cut -d, -f1 rates.csv | head -5)', 'the list: the first 5 currency codes'], ['do ...; done', 'the commands to repeat']), check: c => n(c.out) === 5 && c.out.startsWith('Code: ') },
       { do: 'Or from files: <code>for f in *.csv; do echo "$f has $(wc -l < $f) lines"; done</code>', why: why(['*.csv', 'every file in this folder ending in .csv'], ['$f', 'the current file name'], ['$(wc -l < $f)', 'its line count']), check: c => n(c.out) >= 1 && c.out.includes(' has ') },
-      { do: 'Now in a script. In ~/course/scripts create <b>rates_for.sh</b> and make it executable. <code>"$@"</code> means "all the arguments".' + pre`
-#!/bin/bash
-# Usage: ./rates_for.sh CODE...    e.g. ./rates_for.sh USD EUR GBP
-for code in "$@"; do
-  rate=$(grep "^$code," ~/course/data/rates.csv | cut -d, -f2)
-  echo "$code: $rate"
-done`, check: c => c.isExec(S + '/rates_for.sh') },
-      { do: 'Run it with as many codes as you like: <code>./rates_for.sh USD EUR GBP CHF</code>', check: c => { const m = c.cmd.match(/rates_for\.sh((?: \S+)+)$/); return !!m && n(c.out) === m[1].trim().split(' ').length && c.out.split('\n').filter(Boolean).every(l => /^\S+: [\d.]+$/.test(l)); } },
       { do: '<b>Exercise.</b> With one loop, save the rows of USD, EUR and CHF into separate files <b>USD.csv</b>, <b>EUR.csv</b>, <b>CHF.csv</b> in the data folder.', hint: 'grep "^$code," rates.csv > $code.csv inside the loop', check: c => ['USD', 'EUR', 'CHF'].every(x => (c.file(`${D}/${x}.csv`) || '').startsWith(x + ',')) },
     ],
   },
   {
-    id: 'if', title: '2.5 Decisions: if',
+    id: 'if', title: '2.4 Decisions: if',
     intro: '<code>[ ... ]</code> is a test: it succeeds (status 0) or fails. <code>if</code> runs commands only when a test succeeds. <b>The spaces inside [ ] are required</b>: <code>[ -f file ]</code>, not <code>[-f file]</code>.',
     steps: [
       { do: 'In the data folder: <code>[ -f rates.csv ] && echo "file exists"</code>. <code>-f</code> asks "is there such a file?", and <code>&&</code> runs the next command only on success.', why: why(['[ -f rates.csv ]', 'test: is rates.csv an existing file?'], ['&&', 'and then: run the next command only if the test succeeded'], ['echo "file exists"', 'runs only on success'], 'Try it with a wrong name: nothing is printed.'), check: c => c.out === 'file exists\n' },
       { do: 'With if and else: <code>if [ -f rates.csv ]; then echo "found"; else echo "missing"; fi</code>', check: c => /^if /.test(c.cmd) && c.out === 'found\n' },
       { do: 'Press <b>↑</b> and change rates.csv to <b>nothere.csv</b>.', check: c => /^if /.test(c.cmd) && c.out === 'missing\n' },
       { do: 'Compare numbers: <code>rows=$(wc -l < rates.csv)</code>, then <code>if [ $rows -gt 30 ]; then echo "big table"; fi</code>. (<code>-gt</code> = greater than. It works only on whole numbers, not on rates like 4.36.)', why: why(['$rows', 'the number stored earlier'], ['-gt', 'greater than. Also: -lt less, -eq equal, -ge, -le'], ['then ...; fi', 'what to run if the test succeeds; fi closes the if']), check: c => /-gt/.test(c.cmd) && c.out === 'big table\n' },
-      { do: 'Protect rate.sh from a missing argument. In ~/course/scripts, <code>nano rate.sh</code>:' + pre`
-#!/bin/bash
-# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
-if [ -z "$1" ]; then
-  echo "Usage: ./rate.sh CODE    (e.g. ./rate.sh USD)"
-  exit 1
-fi
-rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
-echo "1 $1 = $rate PLN"` + '<code>-z</code> means "is empty", <code>exit 1</code> stops the script with an error. Then run <code>./rate.sh</code> with no argument.', check: c => c.cmd === './rate.sh' && /usage/i.test(c.out) },
-      { do: 'Check the exit status: <code>echo $?</code>', check: c => c.cmd === 'echo $?' && c.out.trim() === '1' },
-      { do: '<b>Exercise.</b> <code>./rate.sh XYZ</code> prints <i>1 XYZ =  PLN</i>. Change rate.sh so it prints <i>Unknown currency: XYZ</i> instead, and try it.', hint: 'after rate=..., add if [ -z "$rate" ]; then ... exit 1; fi', check: async c => { const m = c.cmd.match(/^\.\/rate\.sh (\S+)$/); return !!m && (await c.run(`grep -c "^${m[1]}," ${R}`)).trim() === '0' && /unknown/i.test(c.out) && c.out.includes(m[1]); } },
       { do: 'Put it all together: a script that downloads today\'s rates into a dated file. Create <b>get_rates.sh</b> in ~/course/scripts, make it executable and run it.' + pre`
 #!/bin/bash
 # Downloads today's NBP rates into ~/course/data/rates_YYYY-MM-DD.csv
@@ -246,11 +207,49 @@ fi` + '<code>-s</code> means "exists and is not empty". Run this every day and y
     intro: 'Practise here, then do it for real in Cloud Shell and send a screenshot of <code>ls -l ~/course/homework2</code> and of <code>cat ~/course/homework2/all.txt</code>.',
     steps: [
       { do: 'Create the folder <b>~/course/homework2</b> and go into it.', check: c => c.cwd === '~/course/homework2' },
-      { do: 'Write an executable script <b>summary.sh</b> that takes one word (e.g. <i>korona</i>) and prints: how many currencies match it, then the matching rows sorted from the cheapest. Without an argument it prints a usage message and exits with status 1.', check: c => c.isExec('~/course/homework2/summary.sh') },
-      { do: 'Run <code>./summary.sh korona</code>', check: async c => { if (!/summary\.sh korona$/.test(c.cmd)) return false; const codes = (await c.run(`grep korona ${R} | cut -d, -f1`)).split('\n').filter(Boolean); return codes.every(x => c.out.includes(x)) && c.out.includes(String(codes.length)); } },
-      { do: 'Run <code>./summary.sh</code> with no argument.', check: c => /summary\.sh$/.test(c.cmd) && /usage/i.test(c.out) },
-      { do: 'With one for loop, run summary.sh for <i>dolar</i>, <i>korona</i> and <i>frank</i> and save all the output to <b>all.txt</b>.', hint: 'for w in ...; do ./summary.sh $w; done > all.txt', check: c => ['USD', 'CZK', 'CHF'].every(x => (c.file('~/course/homework2/all.txt') || '').includes(x)) },
+      { do: 'Write an executable script <b>summary.sh</b> that, with one for loop over the words <i>dolar</i>, <i>korona</i> and <i>frank</i>, prints for each word: how many currencies match it, then the matching rows sorted from the cheapest. If ~/course/data/rates.csv does not exist, it prints an error and exits with status 1.', hint: 'if [ ! -f ... ] at the top, then for w in dolar korona frank; do ... done', check: c => c.isExec('~/course/homework2/summary.sh') },
+      { do: 'Run <code>./summary.sh</code>', check: async c => { if (!/summary\.sh$/.test(c.cmd)) return false; const codes = (await c.run(`grep -e dolar -e korona -e frank ${R} | cut -d, -f1`)).split('\n').filter(Boolean); return codes.every(x => c.out.includes(x)) && c.out.includes((await c.run(`grep -c korona ${R}`)).trim()); } },
+      { do: 'Save its output to <b>all.txt</b>: <code>./summary.sh > all.txt</code>', check: c => ['USD', 'CZK', 'CHF'].every(x => (c.file('~/course/homework2/all.txt') || '').includes(x)) },
       { do: 'Run <code>ls -l ~/course/homework2</code>', check: c => /^ls -l/.test(c.cmd) && c.out.includes('all.txt') && c.out.includes('rwx') },
+    ],
+  },
+  {
+    id: 'args', title: '2.B Bonus: script arguments',
+    intro: '<b>Optional, for the curious.</b> Words you type after a script name are its <b>arguments</b>. Inside the script, <code>$1</code> is the first, <code>$2</code> the second, <code>$#</code> how many there are. One script, many questions.',
+    steps: [
+      { do: 'Go to the scripts folder: <code>cd ~/course/scripts</code>, then create <b>rate.sh</b> there (<code>nano rate.sh</code>):' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+grep "$1" ~/course/data/rates.csv`, check: c => (c.file(S + '/rate.sh') || '').includes('$1') },
+      { do: 'Make it executable: <code>chmod +x rate.sh</code>', check: c => c.isExec(S + '/rate.sh') },
+      { do: 'Ask about the dollar: <code>./rate.sh USD</code>', check: c => c.cmd === './rate.sh USD' && /^USD,/.test(c.out) },
+      { do: 'Same script, different questions: <code>./rate.sh CHF</code>, then <code>./rate.sh korona</code>', check: c => c.cmd === './rate.sh korona' && n(c.out) > 1 },
+      { do: 'What if you forget the argument? <code>./rate.sh</code>. <code>$1</code> is empty, and grep with an empty pattern matches every line. We fix that at the end of this lesson.', check: c => c.cmd === './rate.sh' && n(c.out) > 10 },
+      { do: 'Make the output friendlier. Open <code>nano rate.sh</code> and replace everything with:' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
+echo "1 $1 = $rate PLN"` + 'then run <code>./rate.sh EUR</code>. (<code>^</code> means "at the start of the line", so EUR cannot match in the middle of a name.)', why: why(['$1', 'the first argument, e.g. EUR'], ['"^$1,"', 'the pattern becomes <code>^EUR,</code>: EUR at the very start of the line, followed by a comma'], ['| cut -d, -f2', 'keep only the rate'], ['rate=$( ... )', 'store it']), check: c => /^1 [A-Z]{3} = [\d.]+ PLN$/.test(c.out.trim()) },
+      { do: '<b>Exercise.</b> Write <b>top.sh</b> that prints the N most expensive currencies, where N is the first argument. Run <code>./top.sh 5</code>.', hint: 'sort -t, -k2 -nr ... | head -n "$1"', check: async c => { const m = c.cmd.match(/top\.sh (\d+)$/); return !!m && +m[1] > 0 && c.out === await c.run(`sort -t, -k2 -nr ${R} | head -${m[1]}`); } },
+      { do: 'Now in a script. In ~/course/scripts create <b>rates_for.sh</b> and make it executable. <code>"$@"</code> means "all the arguments".' + pre`
+#!/bin/bash
+# Usage: ./rates_for.sh CODE...    e.g. ./rates_for.sh USD EUR GBP
+for code in "$@"; do
+  rate=$(grep "^$code," ~/course/data/rates.csv | cut -d, -f2)
+  echo "$code: $rate"
+done`, check: c => c.isExec(S + '/rates_for.sh') },
+      { do: 'Run it with as many codes as you like: <code>./rates_for.sh USD EUR GBP CHF</code>', check: c => { const m = c.cmd.match(/rates_for\.sh((?: \S+)+)$/); return !!m && n(c.out) === m[1].trim().split(' ').length && c.out.split('\n').filter(Boolean).every(l => /^\S+: [\d.]+$/.test(l)); } },
+      { do: 'Protect rate.sh from a missing argument. In ~/course/scripts, <code>nano rate.sh</code>:' + pre`
+#!/bin/bash
+# Usage: ./rate.sh CODE    e.g. ./rate.sh USD
+if [ -z "$1" ]; then
+  echo "Usage: ./rate.sh CODE    (e.g. ./rate.sh USD)"
+  exit 1
+fi
+rate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)
+echo "1 $1 = $rate PLN"` + '<code>-z</code> means "is empty", <code>exit 1</code> stops the script with an error. Then run <code>./rate.sh</code> with no argument.', check: c => c.cmd === './rate.sh' && /usage/i.test(c.out) },
+      { do: 'Check the exit status: <code>echo $?</code>', check: c => c.cmd === 'echo $?' && c.out.trim() === '1' },
+      { do: '<b>Exercise.</b> <code>./rate.sh XYZ</code> prints <i>1 XYZ =  PLN</i>. Change rate.sh so it prints <i>Unknown currency: XYZ</i> instead, and try it.', hint: 'after rate=..., add if [ -z "$rate" ]; then ... exit 1; fi', check: async c => { const m = c.cmd.match(/^\.\/rate\.sh (\S+)$/); return !!m && (await c.run(`grep -c "^${m[1]}," ${R}`)).trim() === '0' && /unknown/i.test(c.out) && c.out.includes(m[1]); } },
     ],
   },
 );

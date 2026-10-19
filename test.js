@@ -32,17 +32,11 @@ const SOLUTIONS = {
     { file: '~/course/scripts/report.sh', text: '#!/bin/bash\n# Short report\ncd ~/course/data\necho "Currencies: $(wc -l < rates.csv)"\necho "Euro:"\ngrep EUR rates.csv\necho "Three most expensive:"\nsort -t, -k2 -nr rates.csv | head -3\n' },
     'bash report.sh', './report.sh', 'ls -l report.sh', ['chmod +x report.sh', 'ls -l report.sh'], './report.sh', 'report.sh', 'pwd', './report.sh > ~/course/results/report.txt',
     [{ file: '~/course/scripts/kronas.sh', text: '#!/bin/bash\ngrep -c korona ~/course/data/rates.csv\ngrep korona ~/course/data/rates.csv\n' }, 'chmod +x kronas.sh', './kronas.sh']],
-  args: [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\ngrep "$1" ~/course/data/rates.csv\n' }, 'chmod +x rate.sh', './rate.sh USD', ['./rate.sh CHF', './rate.sh korona'], './rate.sh',
-    [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\nrate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)\necho "1 $1 = $rate PLN"\n' }, './rate.sh EUR'],
-    [{ file: '~/course/scripts/top.sh', text: '#!/bin/bash\nsort -t, -k2 -nr ~/course/data/rates.csv | head -n "$1"\n' }, 'chmod 755 top.sh', './top.sh 5']],
   loops: [['cd ~/course/data', 'for code in USD EUR GBP; do echo "Currency: $code"; done'], 'for code in USD EUR GBP; do grep "^$code," rates.csv; done',
     'for code in $(cut -d, -f1 rates.csv | head -5); do echo "Code: $code"; done', 'for f in *.csv; do echo "$f has $(wc -l < $f) lines"; done',
-    [{ file: '~/course/scripts/rates_for.sh', text: '#!/bin/bash\nfor code in "$@"; do\n  rate=$(grep "^$code," ~/course/data/rates.csv | cut -d, -f2)\n  echo "$code: $rate"\ndone\n' }, 'chmod +x ~/course/scripts/rates_for.sh'],
-    '~/course/scripts/rates_for.sh USD EUR GBP CHF', 'for code in USD EUR CHF\ndo\n  grep "^$code," rates.csv > $code.csv\ndone'],
+    'for code in USD EUR CHF\ndo\n  grep "^$code," rates.csv > $code.csv\ndone'],
   if: [['cd ~/course/data', '[ -f rates.csv ] && echo "file exists"'], 'if [ -f rates.csv ]; then echo "found"; else echo "missing"; fi', 'if [ -f nothere.csv ]; then echo "found"; else echo "missing"; fi',
     ['rows=$(wc -l < rates.csv)', 'if [ $rows -gt 30 ]; then echo "big table"; fi'],
-    [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\nif [ -z "$1" ]; then\n  echo "Usage: ./rate.sh CODE"\n  exit 1\nfi\nrate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)\nif [ -z "$rate" ]; then\n  echo "Unknown currency: $1"\n  exit 1\nfi\necho "1 $1 = $rate PLN"\n' }, 'cd ~/course/scripts', './rate.sh'],
-    'echo $?', './rate.sh XYZ',
     [{ file: '~/course/scripts/get_rates.sh', text: String.raw`#!/bin/bash
 out=$HOME/course/data/rates_$(date +%F).csv
 curl -s "https://api.nbp.pl/api/exchangerates/tables/a/?format=json" | jq -r '.[0].rates[] | "\(.code),\(.mid),\(.currency)"' > "$out"
@@ -52,10 +46,17 @@ else
   echo "Download failed"
   exit 1
 fi
-` }, 'chmod +x get_rates.sh', './get_rates.sh']],
+` }, 'cd ~/course/scripts', 'chmod +x get_rates.sh', './get_rates.sh']],
   hw2: [['mkdir ~/course/homework2', 'cd ~/course/homework2'],
-    [{ file: '~/course/homework2/summary.sh', text: '#!/bin/bash\nif [ -z "$1" ]; then\n  echo "Usage: ./summary.sh WORD"\n  exit 1\nfi\necho "Matches: $(grep -c "$1" ~/course/data/rates.csv)"\ngrep "$1" ~/course/data/rates.csv | sort -t, -k2 -n\n' }, 'chmod +x summary.sh'],
-    './summary.sh korona', './summary.sh', 'for w in dolar korona frank; do ./summary.sh $w; done > all.txt', 'ls -l ~/course/homework2'],
+    [{ file: '~/course/homework2/summary.sh', text: '#!/bin/bash\nif [ ! -f ~/course/data/rates.csv ]; then\n  echo "No rates.csv"\n  exit 1\nfi\nfor w in dolar korona frank; do\n  echo "$w: $(grep -c $w ~/course/data/rates.csv)"\n  grep $w ~/course/data/rates.csv | sort -t, -k2 -n\ndone\n' }, 'chmod +x summary.sh'],
+    './summary.sh', './summary.sh > all.txt', 'ls -l ~/course/homework2'],
+  args: [['cd ~/course/scripts', { file: '~/course/scripts/rate.sh', text: '#!/bin/bash\ngrep "$1" ~/course/data/rates.csv\n' }], 'chmod +x rate.sh', './rate.sh USD', ['./rate.sh CHF', './rate.sh korona'], './rate.sh',
+    [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\nrate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)\necho "1 $1 = $rate PLN"\n' }, './rate.sh EUR'],
+    [{ file: '~/course/scripts/top.sh', text: '#!/bin/bash\nsort -t, -k2 -nr ~/course/data/rates.csv | head -n "$1"\n' }, 'chmod 755 top.sh', './top.sh 5'],
+    [{ file: '~/course/scripts/rates_for.sh', text: '#!/bin/bash\nfor code in "$@"; do\n  rate=$(grep "^$code," ~/course/data/rates.csv | cut -d, -f2)\n  echo "$code: $rate"\ndone\n' }, 'chmod +x ~/course/scripts/rates_for.sh'],
+    '~/course/scripts/rates_for.sh USD EUR GBP CHF',
+    [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\nif [ -z "$1" ]; then\n  echo "Usage: ./rate.sh CODE"\n  exit 1\nfi\nrate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)\nif [ -z "$rate" ]; then\n  echo "Unknown currency: $1"\n  exit 1\nfi\necho "1 $1 = $rate PLN"\n' }, 'cd ~/course/scripts', './rate.sh'],
+    'echo $?', './rate.sh XYZ'],
 };
 
 let sh;
