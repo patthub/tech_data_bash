@@ -28,7 +28,7 @@ const HELP = {
   nano: 'Usage: nano FILE\nA simple text editor. Ctrl+O saves, Ctrl+X exits.',
   less: 'Usage: less FILE\nShow a file one screen at a time (here: the whole file). In real less press q to quit.',
   curl: 'Usage: curl [OPTION]... URL\nTransfer data from a URL.\n  -s   silent mode\n  -o FILE  write output to FILE instead of stdout',
-  jq: 'Usage: jq [-r] FILTER\nCommand-line JSON processor. Supported: .[0].rates[]  .field  length  "\\(.code),\\(.mid)"\n  -r   output raw strings, not JSON texts',
+  jq: 'Usage: jq [-r] FILTER [FILE]\nCommand-line JSON processor. Reads FILE, or standard input.\nSupported filters: .  .field  .[0]  .[]  .rates[].mid  length  keys  "\\(.code),\\(.mid)"  and | between them\n  -r   output raw strings, not JSON texts',
   clear: 'Usage: clear\nClear the terminal screen.',
   whoami: 'Usage: whoami\nPrint the user name.',
   date: 'Usage: date [+FORMAT]\nDisplay the current time, optionally in FORMAT.\n  %F   full date, like 2026-10-18\n  %Y %m %d   year, month, day\n  %H %M %S   hour, minute, second',
@@ -656,7 +656,7 @@ Shell.prototype.cmds = {
       const r = await fetch(url);
       out = await r.text();
     } catch (e) {
-      if (!url.includes('api.nbp.pl')) return { err: `curl: (7) Failed to connect to ${url}\n`, code: 6 };
+      if (!url.includes('api.nbp.pl/api/exchangerates/tables')) return { err: `curl: (7) Failed to connect to ${url}\n`, code: 6 };
       out = NBP_SAMPLE;
       err = '(offline: using saved NBP data from 2026-10-16)\n';
     }
@@ -665,6 +665,7 @@ Shell.prototype.cmds = {
   },
   jq(args, stdin) {
     const { f, rest } = opts(args);
+    if (rest[1]) { const r = this.read(rest[1], 'jq'); if (r.err) return { err: r.err, code: 2 }; stdin = r.content; }
     let data;
     try { data = JSON.parse(stdin); } catch { return { err: 'jq: error: Cannot parse input as JSON (is the input empty?)\n', code: 2 }; }
     try {
@@ -718,6 +719,7 @@ function splitTop(s) {
 }
 function jqStage(s, v) {
   if (s.startsWith('"') && s.endsWith('"')) return [s.slice(1, -1).replace(/\\\((.*?)\)/g, (_, p) => { const r = jqPath(p.trim(), v)[0]; return typeof r === 'string' ? r : JSON.stringify(r); })];
+  if (s === 'keys') return [Array.isArray(v) ? v.map((_, i) => i) : Object.keys(v ?? {}).sort()];
   if (s === 'length') return [Array.isArray(v) || typeof v === 'string' ? v.length : Object.keys(v ?? {}).length];
   return jqPath(s, v);
 }

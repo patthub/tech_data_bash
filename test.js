@@ -57,6 +57,31 @@ fi
     '~/course/scripts/rates_for.sh USD EUR GBP CHF',
     [{ file: '~/course/scripts/rate.sh', text: '#!/bin/bash\nif [ -z "$1" ]; then\n  echo "Usage: ./rate.sh CODE"\n  exit 1\nfi\nrate=$(grep "^$1," ~/course/data/rates.csv | cut -d, -f2)\nif [ -z "$rate" ]; then\n  echo "Unknown currency: $1"\n  exit 1\nfi\necho "1 $1 = $rate PLN"\n' }, 'cd ~/course/scripts', './rate.sh'],
     'echo $?', './rate.sh XYZ'],
+  'api-nbp': [['mkdir -p ~/course/api', 'cd ~/course/api'], 'curl -s "https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json"', `curl -s "https://api.nbp.pl/api/exchangerates/rates/a/usd/?format=json" | jq '.'`,
+    'curl -s "https://api.nbp.pl/api/exchangerates/rates/a/usd/last/10/?format=json" > usd.json', 'jq keys usd.json', `jq -r '.currency' usd.json`, `jq '.rates[0]' usd.json`, `jq '.rates[].mid' usd.json`,
+    [String.raw`jq -r '.rates[] | "\(.effectiveDate),\(.mid)"' usd.json > usd.csv`, 'cat usd.csv'], 'sort -t, -k2 -nr usd.csv | head -1',
+    ['code=eur', 'curl -s "https://api.nbp.pl/api/exchangerates/rates/a/$code/last/10/?format=json" > $code.json'], ['for code in usd eur gbp chf; do curl -s "https://api.nbp.pl/api/exchangerates/rates/a/$code/last/10/?format=json" > $code.json; done', 'ls'],
+    `for f in *.json; do echo "$f $(jq -r '.rates[].mid' $f | tail -1)"; done`, 'curl -s "https://api.nbp.pl/api/exchangerates/rates/a/xyz/?format=json"',
+    String.raw`curl -s "https://api.nbp.pl/api/exchangerates/rates/a/jpy/last/30/?format=json" | jq -r '.rates[] | "\(.effectiveDate),\(.mid)"' > jpy.csv`,
+    `for c in nok sek dkk; do echo "$c $(curl -s "https://api.nbp.pl/api/exchangerates/rates/a/$c/?format=json" | jq '.rates[0].mid')"; done`,
+    `curl -s "https://api.nbp.pl/api/exchangerates/rates/a/usd/2026-01-01/2026-03-31/?format=json" | jq '.rates | length'`],
+  'api-wl': [['mkdir -p ~/course/api', 'cd ~/course/api'], `curl -s "https://wolnelektury.pl/api/epochs/" | jq '.'`, `curl -s "https://wolnelektury.pl/api/epochs/" | jq -r '.[].name'`, 'curl -s "https://wolnelektury.pl/api/epochs/" | jq length',
+    'curl -s "https://wolnelektury.pl/api/authors/adam-mickiewicz/books/" > mickiewicz.json', 'jq length mickiewicz.json', `jq '.[0]' mickiewicz.json`, `jq -r '.[].title' mickiewicz.json | head`,
+    `jq -r '.[].kind' mickiewicz.json | sort | uniq -c`, String.raw`jq -r '.[] | "\(.has_audio) \(.title)"' mickiewicz.json | grep -c ^true`,
+    ['curl -s "https://wolnelektury.pl/api/books/pan-tadeusz/" > pan-tadeusz.json', 'jq keys pan-tadeusz.json'], `jq -r '.authors[0].name' pan-tadeusz.json`, `jq -r '.txt' pan-tadeusz.json`,
+    'for a in adam-mickiewicz juliusz-slowacki boleslaw-prus; do echo "$a: $(curl -s "https://wolnelektury.pl/api/authors/$a/books/" | jq length)"; done',
+    [`curl -s "https://wolnelektury.pl/api/authors/" | jq -r '.[].slug' | grep sienkiewicz`, 'curl -s "https://wolnelektury.pl/api/authors/henryk-sienkiewicz/books/" | jq length'],
+    `for b in lalka przedwiosnie kordian treny; do echo "$b: $(curl -s "https://wolnelektury.pl/api/books/$b/" | jq -r '.epochs[0].name')"; done`,
+    String.raw`for b in lalka przedwiosnie kordian treny; do curl -s "https://wolnelektury.pl/api/books/$b/" | jq -r '"\(.authors[0].name): \(.title)"'; done`],
+  hw3: [['mkdir ~/course/homework3', 'cd ~/course/homework3'],
+    [{ file: '~/course/homework3/get.sh', text: String.raw`#!/bin/bash
+cd ~/course/homework3
+for code in usd eur chf; do
+  curl -s "https://api.nbp.pl/api/exchangerates/rates/a/$code/last/5/?format=json" | jq -r '.rates[] | "\(.effectiveDate),\(.mid)"' > $code.csv
+done
+` }, 'chmod +x get.sh'],
+    ['./get.sh', 'ls'], 'for f in *.csv; do echo "$f $(sort -t, -k2 -nr $f | head -1 | cut -d, -f2)"; done > max.txt',
+    `curl -s "https://wolnelektury.pl/api/authors/stefan-zeromski/books/" | jq -r '.[].title' | sort > zeromski.txt`, 'ls -l ~/course/homework3'],
 };
 
 let sh;
@@ -75,8 +100,9 @@ async function play(lessons) {
 }
 
 (async () => {
-  // Class 2 must work on its own, for students who skip class 1
+  // Classes 2 and 3 must work on their own, for students who skip class 1
   await play(LESSONS.filter(L => L.title.startsWith('2.')));
+  await play(LESSONS.filter(L => L.title.startsWith('3.')));
   await play(LESSONS);
   // A few shell behaviours students rely on
   const r = async l => (await sh.run(l)).screen.map(c => c.text).join('');
@@ -96,5 +122,7 @@ async function play(lessons) {
   assert.strictEqual(await r('echo done'), 'done\n');
   assert.strictEqual(await r('fi'), "bash: syntax error near unexpected token `fi'\n");
   assert.strictEqual(await r('seq 3 | sort -r | head -1'), '3\n');
+  assert.strictEqual(await r(`echo '{"b":1,"a":[2,3]}' | jq -r keys`), '[\n  "a",\n  "b"\n]\n');
+  assert.strictEqual(await r('jq . nothere.json'), 'jq: nothere.json: No such file or directory\n');
   console.log('all good');
 })().catch(e => { console.error(e.message); process.exit(1); });
